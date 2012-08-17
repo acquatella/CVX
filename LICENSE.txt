@@ -1,0 +1,73 @@
+CVX: A system for disciplined convex programming
+Copyright (C) 2012 CVX Research, Inc., Austin, TX
+http://cvxr.com
+info@cvxr.com
+
+Thank you for using CVX! 
+
+The files contained in this distribution are covered under one of two licenses, which
+for the purpose of this discussion we will call the "CVX Standard" license and the "CVX
+Professional" license. The "CVX Standard License" is effectively the GPLv2 license, as
+published by the Free Software Foundation, but with a clarification or restriction that
+ensures that modified versions of CVX do not connect to commercial, proprietary solvers.
+
+The CVX Professional License
+-----------------------------
+
+Any files provided in Matlab p-code format are covered by the CVX Professional license.
+These include, but are not limited to, the following files:
+    mosek/cvx_solver_shim.p
+    gurobi/cvx_solver_shim.p
+    cvx_license.p
+You may redistribute these files, but only in unmodified form. You may also distribute
+a version of CVX with these files REMOVED. The resulting "CVX Standard" version of CVX 
+will retain full functionality, with the exception of its ability to connect to non-free
+commercial solvers. This modified distribution must adhere to the CVX Standard License, 
+discussed below. You must include this entire file, INCLUDING the CVX Professional license
+text, with your modified distribution.
+
+The CVX Standard License
+------------------------
+
+Those files not specifically covered by the CVX Professional license are covered instead
+by the CVX Standard license. Except for the restriction offered below, you are free to 
+redistribute and/or modify the files covered under this license under the terms of the GNU
+General Public License as published by the Free Software Foundation; either version 2 of 
+the License ("GPLv2"), or (at your option) any later version. In particular, you must 
+include the full content of this file, as well as the file GPL.txt, when redistributing 
+this software.
+
+Two of the key goals of our licensing approach are
+	- to ensure the free availability of standard CVX functionality; and
+	- to protect our opportunity to generate revenue by selling interfaces to commercial
+      solvers to commercial customers.
+With those goals in mind, the CVX Standard License forbids the distribution of modified
+versions of CVX that connect to solvers that are not free for *all* users, both academic
+and commercial. Some would interpret the GPLv2 in such a way that this injunction is
+redundant; we offer it to ensure that this restriction is clear and explicit.
+
+We encourage the work of others to modify CVX to work with other free solvers, and we
+may be willing to collaborate with you on such an effort. Please contact info@cvxr.com
+if you are interested. If you create such a modification, please consider submitting it
+to CVX Research, Inc. for inclusion in the standard CVX distribution.
+
+If you are a vendor or developer of a commercial solver, and would like to offer CVX as a
+Matlab interface for that solver, please contact CVX Research, Inc. and info@cvxr.com. We 
+welcome the opportunity to support a wider variety of commercial solvers with CVX, and are
+willing to devote engineering resources to make those connections.
+
+If you are a user of a commercial solver, and would like to see it supported by CVX,
+please contact us at info@cvxr.com as well. We will certainly consider your request, and
+if it proves technically feasible, we will reach out to the solver vendor to work on an
+implementation.
+
+A full copy of the GNU General Public License can be found in the file GPL.txt in the same
+directory as this file. If you did not receive a copy of this file, please contact CVX 
+Research, Inc. at info@cvxr.com.
+
+No Warranty
+-----------
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or 
+FITNESS FOR A PARTICULAR PURPOSE.
