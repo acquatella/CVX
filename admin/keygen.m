@@ -1,0 +1,15 @@
+lic.name         = input( 'Name: ', 's' );
+lic.organization = input( 'Organization: ', 's' );
+lic.email        = input( 'Email address: ', 's' );
+lic.username     = input( 'Username: ', 's' );
+lic.hostid       = input( 'Host ID: ', 's' );
+lic.platform     = input( 'Platform: ', 's' );
+lic.type         = input( 'Type: ', 's' );
+lic.expiration   = input( 'Expiration date (YYYY-MM-DD): ', 's' );
+message = sprintf( '%s|%s|%s|%s|%s|%s', lic.name, lic.organization, lic.email, lic.username, lic.hostid, lic.expiration );
+keys = load('keys');
+privkey = keys.keypair.getPrivate();
+dsa = java.security.Signature.getInstance('SHA1withDSA');
+dsa.initSign(privkey);
+dsa.update(unicode2native(message));
+lic.signature = dsa.sign()';
