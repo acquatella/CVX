@@ -40,7 +40,7 @@ this software.
 Two of the key goals of our licensing approach are
 	- to ensure the free availability of standard CVX functionality; and
 	- to protect our opportunity to generate revenue by selling interfaces to commercial
-      solvers to commercial customers.
+      solvers to our commercial customers.
 With those goals in mind, the CVX Standard License forbids the distribution of modified
 versions of CVX that connect to solvers that are not free for *all* users, both academic
 and commercial. Some would interpret the GPLv2 in such a way that this injunction is
