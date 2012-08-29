@@ -1,7 +1,13 @@
-CVX: A system for disciplined convex programming   
-© 2012 CVX Research, Inc., Austin, TX.
-http://cvxr.com
-info@cvxr.com
+.. _licensing2:
+
+=======
+License
+=======
+
+| CVX: A system for disciplined convex programming   
+| © 2012 CVX Research, Inc., Austin, TX.
+| http://cvxr.com
+| info@cvxr.com
 
 Thank you for using CVX!
 
@@ -17,7 +23,9 @@ CVX Professional License
 
 The standard CVX distribution includes several files in Matlab *p-code* format, which
 contain encrypted binary versions of Matlab bytecode. As their name implies, they are 
-recognized by their .p suffix. Currently the following files are distributed this way:
+recognized by their ``.p`` suffix. Currently the following files are distributed this way:
+
+::
 
     shims/cvx_mosek.p
     shims/cvx_gurobi.p
@@ -35,7 +43,7 @@ connect to commercial solvers. This modified package is covered by the CVX Stand
 License. Under this license, you are free to redistribute and/or modify the files under
 the terms of the GPLv2, plus the additional terms discussed in "Solver Interfaces" below. 
 
-You must include the files LICENSE.txt and GPL.txt in unmodified form when 
+You must include the files ``LICENSE.txt`` and ``GPL.txt`` in unmodified form when 
 redistributing this software. If you did not receive a copy of either of these files
 with your distribution, please contact us.
 
@@ -76,7 +84,7 @@ reach out to the solver vendor to work on an implementation.
 Bundled solvers
 ----------------
 
-The solvers SDPT3 and SeDuMi are distributed with CVX in the sdpt3/ and sedumi/
+The solvers SDPT3 and SeDuMi are distributed with CVX in the ``sdpt3/`` and ``sedumi/``
 subdirectories, respectively. Neither of these packages is owned by CVX Research, Inc.
 Both are included with permission of the authors, and licensed under the terms of
 the GPLv2. Please consult the plain-text documentation contained in each of these
@@ -85,7 +93,7 @@ directories for more information about copying, citation, and so forth.
 Example library
 ---------------
 
-The contents of the example library, which is distributed with CVX in the examples/
+The contents of the example library, which is distributed with CVX in the ``examples/``
 subdirectory, is *public domain*. You are free to use them in any way you wish; but when 
 you do, we request that you give appropriate credit to the authors. A number of people 
 have contributed to the examples in this library, including Lieven Vandenberghe, 
