@@ -1,62 +1,64 @@
-function [ license, ltext ] = cvx_license( seed_name )
+function [ license, ltext ] = cvx_license( varargin )
 
 % CVX_LICENSE   License processing for CVX Professional.
 %    This file performs various functions needed to perform license
 %    management for the professional features of CVX.
 
-persistent public_key
+persistent blank fs
+if isempty( fs ),
+    blank = struct( 'name', '', 'organization', '', 'email', '', ...
+        'license_type', '', 'username', {{}}, 'hostid', {{}}, ...
+        'expiration', '0000-00-00', 'signature', int8([]), ...
+        'status', 'NOTFOUND', 'days_left', -Inf, 'filename', '' );
+    if strncmp( computer, 'PC', 2 ), 
+        fs = '\'; 
+    else
+        fs = '/'; 
+    end
+end
 
 if ~usejava( 'jvm' ),
-    license = [];
-    return
+    error( 'CVX:NeedJVM', 'The CVX licensing mechanism requires Java.' );
 end
 
-if isempty( public_key ),
-    keyfac = java.security.KeyFactory.getInstance('DSA');
-    public_key = '308201b73082012c06072a8648ce3804013082011f02818100fd7f53811d75122952df4a9c2eece4e7f611b7523cef4400c31e3f80b6512669455d402251fb593d8d58fabfc5f5ba30f6cb9b556cd7813b801d346ff26660b76b9950a5a49f9fe8047b1022c24fbba9d7feb7c61bf83b57e7c6a8a6150f04fb83f6d3c51ec3023554135a169132f675f3ae2b61d72aeff22203199dd14801c70215009760508f15230bccb292b982a2eb840bf0581cf502818100f7e1a085d69b3ddecbbcab5c36b857b97994afbbfa3aea82f9574c0b3d0782675159578ebad4594fe67107108180b449167123e84c281613b7cf09328cc8a6e13c167a8b547c8d28e0a3ae1e2bb3a675916ea37f0bfa213562f1fb627a01243bcca4f1bea8519089a883dfe15ae59f06928b665e807b552564014c3bfecf492a038184000281804b5b19f08b0852bfd6527750cd897cf44909e5f875accee48fc43a1482c23d8203c63d63dfb353d4be3a3152ed2b15ed7cdb6ea3bfc5278ca3975d7f32f920bc6317417c0145afc8513b4920c75f0cec5eddbe325a8a311a2a5b4d84e5ba9675ba95c169e449637abc54baa1c95d87ae2cbd1d797bbbbfc63e00d2674f86d317';
-    public_key = uint8(hex2dec(reshape(public_key,2,length(public_key)/2)'));
-    public_key = java.security.spec.X509EncodedKeySpec(public_key);
-    public_key = keyfac.generatePublic(public_key);
-    clear keyfac
-end
+%%%%%%%%%%%%%%%%%%%%%%%%%
+% Parse input arguments %
+%%%%%%%%%%%%%%%%%%%%%%%%%
 
-if nargin == 1,
-    if isstruct( seed_name ),
-        license = quick_verify( seed_name, public_key );
+clear_all = false;
+stored_error = '';
+lnames = { '' };
+verbose = true;
+for k = 1 : nargin,
+    arg = varargin{k};
+    if isempty( arg ),
+        continue;
+    elseif isstruct( arg ),
+        license = full_verify( arg );
         return
-    elseif ~isempty( seed_name )
-        if ~ischar( seed_name ) && size( seed_name, 1 ) > 1,
-            error( 'CVX:Licensing', 'License filename must be a string.' );
-        elseif strcmpi( seed_name, '*key*' )
-            license = public_key;
-            return
-        elseif ~exist( seed_name, 'file' ) && ~exist( [ seed_name, '.mat' ], 'file' ),
-            error( 'CVX:Licensing', 'License file %s does not exist.', seed_name );
+    elseif ischar( arg ),
+        switch arg,
+            case '*key*',
+                license = get_public_key;
+                return
+            case '-quiet',
+                verbose = false;
+            case '-clear',
+                clear_all = true;
+            otherwise,
+                if exist( arg, 'file' ),
+                    lnames{end+1} = arg; %#ok
+                elseif exist( [ arg, '.mat' ], 'file' ),
+                    lnames{end+1} = [ arg, '.mat' ], %#ok
+                else
+                    stored_error = sprintf( 'License file "%s" does not exist.', arg );
+                end
         end
-    end
-end
-if strncmp( computer, 'PC', 2 ), 
-    fs = '\'; 
-else
-    fs = '/'; 
-end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%
-% Check current license %
-%%%%%%%%%%%%%%%%%%%%%%%%%
-
-try
-    cur_lic = load( [ prefdir, fs, 'cvx_prefs.mat' ], 'license' );
-    cur_lic = cur_lic.license;
-    if isempty( cur_lic.signature ),
-        cur_lic = [];
     else
-        cur_lic = full_verify( cur_lic, public_key );
-        cur_lic.filename = { '(from saved preferences)' };
+        error( 'CVX:Licensing', 'Invalid use of the CVX licensing system.' );
     end
-catch %#ok
-    cur_lic = [];
 end
+nargs = length( lnames ) - 1;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Look for all available license files %
@@ -67,69 +69,105 @@ end
 % --- Matlab path
 % --- Home directory
 % --- Desktop directory
-lnames = {};
-if nargin == 1,
-    if ~isempty( seed_name ),
-        if ~exist( seed_name, 'file' ), 
-            seed_name = [ seed_name, '.mat' ]; 
-        end
-        lnames = { seed_name };
-    end
-elseif nargin == 0,
+if length( lnames ) <= 1,
     lname = 'cvx_license.mat';
-    lnames = which( lname, '-all' );
+    lnames = [ lnames ; which( 'cvx_license.mat', '-all' ) ];
     homedir = char(java.lang.System.getProperty('user.home'));
     lnames{end+1} = [ homedir, fs, lname ];
     lnames{end+1} = [ homedir, fs, 'Desktop', fs, lname ];
     [ dummy, ndxs ] = sort( lnames );
-    tt = [ true, ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
+    tt = [ true ; ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
     lnames = lnames( sort(ndxs(tt)) );
-else
-    lnames = {};
 end
 
 %%%%%%%%%%%%%%%%%%%%%
 % Test each license %
 %%%%%%%%%%%%%%%%%%%%%
 
-ndx = 0;
-if ~isempty( cur_lic ),
-    ndx = ndx + 1;
-    licenses = cur_lic;
-else
-    licenses = [];
-end
+best_days = -Inf;
+best_ndx = 0;
+licenses = [];
+found_saved = false;
 for k = 1 : length(lnames),
-    fname = lnames{k};
-    if ~exist( fname, 'file' ),
-        continue;
-    end
-    lic = load( fname );
-    if ( ~isempty( cur_lic ) && ...
-         isequal( cur_lic.expiration, lic.expiration ) && ...
-         isequal( cur_lic.signature, lic.signature ) ),
-        cur_lic.filename{end+1} = fname;
-        continue
-    end
-    for kk = 1 : ndx,
+    lic = load_and_verify( lnames{k}, blank, fs );
+    if isequal( lic.status, 'NOTFOUND' ), continue; end
+    if k == 1, found_saved = true; end
+    found = false;
+    for kk = 1 : length(licenses),
         if ( isequal( licenses(kk).expiration, lic.expiration ) && ...
              isequal( licenses(kk).signature, lic.signature ) ),
-            licenses(kk).filename{end+1} = fname;
-            continue
+            licenses(kk).filename{end+1} = lic.filename;
+            found = true;
+            break
         end
     end
-    lic.filename = { fname };
-    lic.status = 'UNVERIFIED';
-    lic = full_verify( lic , public_key );
-    ndx = ndx + 1;
-    if ndx == 1,
-        licenses = lic;
+    if ~found,
+        lic.filename = { lic.filename };
+        if isempty( licenses ),
+            licenses = lic;
+        else
+            licenses(end+1) = lic;
+        end
+        if lic.days_left > best_days,
+            best_days = lic.days_left;
+            best_ndx = length(licenses);
+        end
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Print current host info and licenses found %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if verbose,
+    ltext = {};
+    if nargout == 0,
+        ltext{end+1} = '';
+    end
+    ltext{end+1} = 'License host:';
+    ltext{end+1} = sprintf( '    Username: %s', get_username );
+    [ hostid_addr, hostid_name ] = get_hostid;
+    if isempty( hostid_addr )
+        ltext{end+1} = '    Host IDs: none';
     else
-        try
-            licenses(ndx) = lic;
-        catch %#ok
-            for kk = fieldnames(lic)',
-                licenses(ndx).(kk{1}) = lic.(kk{1});
+        ltext{end+1} = sprintf( '    Host IDs: %s (%s)', hostid_addr{1}, hostid_name{1} );
+    end
+    ndxs = false(1,length(licenses));
+    ltext{end+1} = 'Installed license:';
+    if found_saved,
+        ltext = print_license(licenses(1),'    ',ltext);
+        ndxs(1) = true;
+    else
+        ltext{end+1} = '    No license installed.';
+    end
+    if best_days >= 0 && ~ndxs(best_ndx),
+        if found_saved,
+            ltext{end+1} = 'Replacement license:';
+        elseif nargout > 0,
+            ltext{end+1} = 'Installing license:';
+        else
+            ltext{end+1} = 'Valid license found (run "cvx_setup" to install):';
+        end
+        ndxs(best_ndx) = true;
+        ltext = print_license(licenses(best_ndx),'    ',ltext);
+    end
+    if any(~ndxs),
+        if any(ndxs),
+            prefix = '    ';
+            if nnz(ndxs) > 1,
+                ltext{end+1} = 'Other licenses found:';
+                prefix2 = '        ';
+            else
+                ltext{end+1} = 'Other license found:';
+                prefix2 = '    ';
+            end
+        else
+            prefix = '';
+            prefix2 = '    ';
+        end
+        for k = 1 : length(ndxs),
+            if ~ndxs(k),
+                ltext = print_license(licenses(k),prefix,ltext,prefix2);
             end
         end
     end
@@ -139,104 +177,48 @@ end
 % Print all licenses found %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-ltext = {};
-if nargout == 0 && nargin == 0,
-    ltext{end+1} = '';
-end
-best_days = -Inf;
-best_ndx = 0;
-if ~isempty( cur_lic ),
-    ltext{end+1} ='Current license:';
-    ltext = print_license( cur_lic, '    ', ltext );
-    if length(cur_lic.filename) > 1,
-        ltext{end+1} = sprintf( '    Also in file: %s', cur_lic.filename{2:end} );
-    end
-    if cur_lic.days_left > best_days,
-        best_days = cur_lic.days_left;
-        best_ndx = 1;
-    end
-    nfound = 1;
-    if nfound < length(licenses),
-        ltext{end+1} = 'Other license files found:';
-        for k = 2 : length(licenses),
-            ltext{end+1} = sprintf( '    File: %s', licenses(k).filename{:} ); %#ok
-            ltext = print_license( licenses(k), '        ', ltext );
-            if licenses(k).days_left > best_days,
-                best_days = licenses(k).days_left;
-                best_ndx = k;
-            end
-        end
-    end
-elseif ~isempty( licenses ),
-    if length(licenses) == 1,
-        ltext{end+1} = 'License file found:';
-    else
-        ltext{end+1} = 'License files found:';
-    end
-    for k = 1 : length(licenses),
-        ltext{end+1} = sprintf( '    File: %s', licenses(k).filename{:} ); %#ok
-        ltext = print_license(licenses(k),'    ',ltext);
-        if licenses(k).days_left > best_days,
-            best_days = licenses(k).days_left;
-            best_ndx = k;
-        end
-    end
-end
 if best_days < 0,
-    ltext{end+1} = 'No valid licenses found.';
-    if nargout == 0 || nargin == 0 || isempty( seed_name ),
-        if nargout == 0 && nargin == 0,
-            ltext{end+1} = '';
-            ltext{end+1} = 'Licensing info:';
-        end
-        username = char(java.lang.System.getProperty('user.name'));
-        ltext{end+1} = sprintf('    Named user: %s', username );
-        networks = java.net.NetworkInterface.getNetworkInterfaces();
-        if strncmp(computer,'MAC',3), prefix = 'en'; else prefix = 'eth'; end
-        addrs = {}; names = {};
-        while networks.hasMoreElements(),
-            ni = networks.nextElement();
-            addr = sprintf('%02x',rem(double(ni.getHardwareAddress())+256,256));
-            if ~isempty( addr )
-                name = char(ni.getName());
-                if strncmp( prefix, name, length(prefix) ),
-                    names{end+1} = name; %#ok
-                    addrs{end+1} = addr; %#ok
-                end
-            end
-        end
-        if isempty(names),
-            ltext{end+1} = '    Could not determine host ID.';
-        else
-            [ names, ndxs ] = sort( names );
-            ltext{end+1} = sprintf('    Host ID: %s (%s)', addrs{ndxs(1)}, names{1} );
-        end
+    if verbose,
+        ltext{end+1} = 'No valid licenses found.';
     end
     license = [];
-elseif nargin == 0,
-    license = licenses(best_ndx);
-elseif isempty( seed_name ),
-    license = cur_lic;
-elseif length( licenses ) < 1 + ~isempty(cur_lic),
+elseif clear_all,
+    if verbose,
+        ltext{end+1} = 'License clear requested.';
+    end
     license = [];
 else
-    license = licenses(1+~isempty(cur_lic));
-end
-if ~isempty( license ) && iscell( license.filename ),
+    license = licenses( best_ndx );
     license.filename = license.filename{1};
 end
 if nargout == 0,
-    if nargin == 0,
+    clear license
+    if verbose,
         ltext{end+1} = '';
     end
-    clear license
 end
-if nargout < 2,
+if verbose,
     fprintf( '%s\n', ltext{:} );
-    clear ltext
+end
+if ~isempty( stored_error ),
+    error( 'CVX:Licensing', stored_error );
 end
 
-function ltext = print_license( lic, prefix, ltext )
+function ltext = print_license( lic, prefix, ltext, prefix2 )
+if isfield( lic, 'filename' ) && ~isempty( lic.filename ),
+    fprefix = '%sFile: %s';
+    fprefix2 = '%sAlso in file: %s';
+    fnames = lic.filename;
+    if fnames{1}(1) == '(',
+        fnames(1) = [];
+        fprefix = fprefix2;
+    end
+    for k = 1 : length(fnames),
+        ltext{end+1} = sprintf( fprefix, prefix, fnames{k} );
+        if nargin > 3, prefix = prefix2; end
+        fprefix = fprefix2;
+    end
+end
 if any( strcmp( lic.status, { 'EMPTY', 'CORRUPT' } ) )
     ltext{end+1} = sprintf( '%sStatus: %s', prefix, lic.status );
     return
@@ -253,48 +235,28 @@ if ~isempty( lic.name ),
 elseif ~isempty( lic.email ),
     ltext{end+1} = sprintf( '%sContact: %s', prefix, lic.email );
 end
+if ~isempty( lic.license_type ),
+    ltext{end+1} = sprintf( '%sLicense type: %s', prefix, lic.license_type );
+end
 if ~isempty( lic.username ),
-    username = char(java.lang.System.getProperty('user.name'));
-    if ~isequal( username, lic.username ), 
-        ltext{end+1} = sprintf( '%sNamed user: %s (MISMATCH: %s)', prefix, lic.username, username );
+    if any( strcmp( get_username, lic.username ) ),
+        status = '';
     else
-        ltext{end+1} = sprintf( '%sNamed user: %s', prefix, lic.username );
+        status = ' (MISMATCH)';
     end
+    l_username = sprintf( '%s/', lic.username{:} );
+    ltext{end+1} = sprintf( '%sNamed user: %s%s', prefix, l_username(1:end-1), status );
 end
 if ~isempty( lic.hostid ),
-    networks = java.net.NetworkInterface.getNetworkInterfaces();
-    names = {}; addrs = {};
-    master = '';
-    while networks.hasMoreElements(),
-        ni = networks.nextElement();
-        hostid = sprintf('%02x',rem(double(ni.getHardwareAddress())+256,256));
-        if isempty(hostid),
-            continue;
-        elseif isequal( hostid, lic.hostid ),
-            master = char(ni.getName);
-            break;
-        else
-            names{end+1} = char(ni.getName); %#ok
-            addrs{end+1} = hostid; %#ok
-        end
-    end 
-    if ~isempty( master ),
-        ltext{end+1} = sprintf( '%sHost ID: %s (%s)', prefix, lic.hostid, master );
-    elseif  isempty(addrs),
-        ltext{end+1} = sprintf( '%sHost ID: %s (MISMATCH: no host id)', prefix, lic.hostid );
+    if any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ),
+        status = '';
+    elseif isempty( get_hostid ),
+        status = '(MISMATCH: no host id)';
     else
-        if strncmp( computer, 'MAC', 3 ),
-            master = 'en0'; 
-        else
-            master = 'eth0'; 
-        end
-        ndxs = find(strcmp(names,master));
-        if isempty(ndxs),
-            [dum,ndxs] = sort(names); %#ok
-            ndxs = ndxs(1);
-        end
-        ltext{end+1} = sprintf( '%sHost ID: %s (MISMATCH: %s (%s))', prefix, lic.hostid, addrs{ndxs}, names{ndxs} );
+        status = '(MISMATCH)';
     end
+    l_hostid = sprintf( '%s/', lic.hostid{:} );
+    ltext{end+1} = sprintf( '%sHost ID: %s (%s)', prefix, l_hostid(1:end-1), status );
 end
 parser = java.text.SimpleDateFormat('yyyy-MM-dd');
 try
@@ -314,126 +276,160 @@ else
 end
 if isequal( lic.status, 'VERIFIED'  ),
     ltext{end+1} = sprintf( '%sSignature: valid', prefix );
-elseif isequal( lic.status, 'INVALID:SIGNATURE' ),
+elseif isequal( lic.status, 'INVALID:SIGNATURE' ) || isequal( lic.status, 'CORRUPT:SIGNATURE' ),
     ltext{end+1} = sprintf( '%sSignature: INVALID', prefix );
 else
     ltext{end+1} = sprintf( '%sSignature: unverified', prefix );
 end
 
-function valid = quick_verify( lic, public_key )
-valid = false;
+function public_key = get_public_key
+persistent p_public_key
+if isempty( p_public_key ),
+    keyfac = java.security.KeyFactory.getInstance('DSA');
+    p_public_key = '308201b73082012c06072a8648ce3804013082011f02818100fd7f53811d75122952df4a9c2eece4e7f611b7523cef4400c31e3f80b6512669455d402251fb593d8d58fabfc5f5ba30f6cb9b556cd7813b801d346ff26660b76b9950a5a49f9fe8047b1022c24fbba9d7feb7c61bf83b57e7c6a8a6150f04fb83f6d3c51ec3023554135a169132f675f3ae2b61d72aeff22203199dd14801c70215009760508f15230bccb292b982a2eb840bf0581cf502818100f7e1a085d69b3ddecbbcab5c36b857b97994afbbfa3aea82f9574c0b3d0782675159578ebad4594fe67107108180b449167123e84c281613b7cf09328cc8a6e13c167a8b547c8d28e0a3ae1e2bb3a675916ea37f0bfa213562f1fb627a01243bcca4f1bea8519089a883dfe15ae59f06928b665e807b552564014c3bfecf492a038184000281804b5b19f08b0852bfd6527750cd897cf44909e5f875accee48fc43a1482c23d8203c63d63dfb353d4be3a3152ed2b15ed7cdb6ea3bfc5278ca3975d7f32f920bc6317417c0145afc8513b4920c75f0cec5eddbe325a8a311a2a5b4d84e5ba9675ba95c169e449637abc54baa1c95d87ae2cbd1d797bbbbfc63e00d2674f86d317';
+    p_public_key = uint8(hex2dec(reshape(p_public_key,2,length(p_public_key)/2)'));
+    p_public_key = java.security.spec.X509EncodedKeySpec(p_public_key);
+    p_public_key = keyfac.generatePublic(p_public_key);
+end
+public_key = p_public_key;
+
+function lic = load_and_verify( fname, blank, fs )
+found = false;
+if isempty( fname ),
+    try
+        lic = load( [ prefdir, fs, 'cvx_prefs.mat' ], 'license' );
+        lic = lic.license;
+        if isempty( lic ),
+            lic = blank;
+        else
+            lic = full_verify( lic );
+        end
+    catch %#ok
+        lic = blank;
+    end
+    lic.filename = '(from saved preferences)';
+elseif exist( fname, 'file' ),
+    try
+        lic = full_verify( load( fname ) );
+        lic.filename = fname;
+    catch %#ok
+        lic = blank;
+        lic.status = 'CORRUPT';
+    end
+else
+    lic = blank;
+end
+lic2 = lic;
 try
-    if isempty( lic ) || isempty( lic.signature ), return; end
-    expiration = [ 10000, 100, 1 ] * sscanf( lic.expiration, '%d-%d-%d' );
-    today = java.util.Date();
-    today = today.getDay() + 100 * ( today.getMonth() + 100 * ( today.getYear() + 1900 ) );
-    if today > expiration, return; end
-    if ~isempty(lic.username)
-        username = char(java.lang.System.getProperty('user.name'));
-        if ~isequal(username,lic.username), return; end
-    end
-    if ~isempty(lic.hostid),
-        found_hostid = false;
-        networks = java.net.NetworkInterface.getNetworkInterfaces();
-        while networks.hasMoreElements(),
-            ni = networks.nextElement();
-            hostid = sprintf('%02x',rem(double(ni.getHardwareAddress())+256,256));
-            if isequal( hostid, lic.hostid ),
-                found_hostid = true;
-                break
-            end
-        end
-        if ~found_hostid,
-            return
-        end
-    end
-    message = [ lic.name, '|', lic.organization, '|', lic.email, '|', lic.username, '|', lic.hostid, '|', lic.expiration ];
-    dsa = java.security.Signature.getInstance('SHA1withDSA');
-    dsa.initVerify(public_key);
-    dsa.update(unicode2native(message));
-    if ~dsa.verify(lic.signature), return; end
-    valid = true;
+    lic2(2) = blank; %#ok
 catch %#ok
+    lic = blank;
+    for k = fieldnames(blank)',
+        try lic.(k{1}) = lic2.(k{1}); catch end %#ok
+    end
 end
 
-function lic = full_verify( lic, public_key )
-try 
-    signature = lic.signature; 
-    lic.signature = []; 
-    lic.days_left = '-Inf';
-catch %#ok
-    signature = [];
-end
-if isempty( lic ),
-    lic = struct( 'signature', [], 'status', 'EMPTY', 'days_left', '-Inf' );
-    return
-elseif ~isstruct( lic ) || numel( lic ) ~= 1,
-    lic = struct( 'signature', [], 'status', 'CORRUPT', 'days_left', '-Inf' );
-    return
-elseif ~isfield( lic, 'name' ) || ~ischar( lic.name ) || isempty( lic.name ) || ...
-       ~isfield( lic, 'organization' ) || ~ischar( lic.organization ) || isempty( lic.organization ) || ...
-       ~isfield( lic, 'email' ) || ~ischar( lic.email ) || isempty( lic.email ) || ...
-       ~isfield( lic, 'username' ) || ~ischar( lic.username ) || ...
-       ~isfield( lic, 'hostid' ) || ~ischar( lic.hostid ) || ...
-       ~isfield( lic, 'expiration' ) || ~ischar( lic.expiration ) || isempty( lic.expiration ) || ...
-       ~isfield( lic, 'signature' ) || isempty( signature ) || ~isa( signature, 'int8' ),
-    lic.status = 'CORRUPT';
-    lic.days_left = '-Inf';
-    return
-end
-if ~isempty( lic.username ),
-    username = char(java.lang.System.getProperty('user.name'));
-    if ~isequal( username, lic.username ),
+%%%%%%%%%%%%%%%%
+% BEGIN COMMON %
+%%%%%%%%%%%%%%%%
+
+function lic = full_verify( lic )
+try
+    signature = lic.signature;
+    lic.signature = [];
+    lic.days_left = -Inf;
+    if ~isempty( lic.username ) && ~any( strcmp( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';
         return
-    end
-end
-if ~isempty( lic.hostid ),
-    lic.hostid_name = '';
-    networks = java.net.NetworkInterface.getNetworkInterfaces();
-    while networks.hasMoreElements(),
-        ni = networks.nextElement();
-        hostid = sprintf('%02x',rem(double(ni.getHardwareAddress())+256,256));
-        if isequal( hostid, lic.hostid ),
-            lic.hostid_name = char(ni.getName);
-            break
-        end
-    end
-    if isempty( lic.hostid_name ),
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x) strcmp(x,lic.hostid), get_hostid ) ),
         lic.status = 'INVALID:HOSTID';
         return
     end
-end
-parser = java.text.SimpleDateFormat('yyyy-MM-dd');
-try
-    expire = parser.parse(lic.expiration);
+    parser = java.text.SimpleDateFormat('yyyy-MM-dd');
+    try
+        expire = parser.parse(lic.expiration);
+    catch %#ok
+        lic.status = 'CORRUPT:EXPIRATION';
+        lic.days_left = -Inf;
+        return
+    end
+    today = java.util.Date;
+    days_left = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
+    if days_left < 0,
+        lic.days_left = days_left;
+        lic.status = 'EXPIRED';
+        return
+    end
+    message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+    dsa = java.security.Signature.getInstance('SHA1withDSA');
+    dsa.initVerify(get_public_key);
+    dsa.update(unicode2native(message));
+    if ~dsa.verify(int8(signature)),
+        lic.status = 'INVALID:SIGNATURE';
+    else
+        lic.days_left = days_left;
+        lic.signature = signature;
+        lic.status = 'VERIFIED';
+    end
 catch %#ok
-    lic.status = 'CORRUPT:EXPIRATION';
-    return
+    if numel( lic ) ~= 1 || ~isstruct( lic ),
+        lic = [];
+    end
+    lic.status = 'ERROR';
+    lic.status = 'INVALID:FORMAT';
 end
-today = java.util.Date;
-lic.days_left = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
-if lic.days_left < 0,
-    lic.status = 'EXPIRED';
-    return
+
+function username = get_username
+persistent p_username
+if isempty( p_username )
+    p_username = char(java.lang.System.getProperty('user.name'));
 end
-try
-    message = sprintf( '%s|%s|%s|%s|%s|%s', lic.name, lic.organization, lic.email, lic.username, lic.hostid, lic.expiration );
-catch %#ok
-    lic.status = 'CORRUPT:DSIGNATURE';
-    lic.days_left = -Inf;
-    return
-end
-dsa = java.security.Signature.getInstance('SHA1withDSA');
-dsa.initVerify(public_key);
-dsa.update(unicode2native(message));
-if ~dsa.verify(signature),
-    lic.status = 'INVALID:SIGNATURE';
-    lic.days_left = -Inf;
+username = p_username;
+
+function [ hostid_addr, hostid_name ] = get_hostid
+persistent p_hostid_name p_hostid_addr
+if isempty( p_hostid_addr )
+    hostid_name = {}; 
+    hostid_addr = {};
+    networks = java.net.NetworkInterface.getNetworkInterfaces();
+    while networks.hasMoreElements(),
+        ni = networks.nextElement();
+        hostid = ni.getHardwareAddress();
+        if ~isempty(hostid),
+            hostid_name{end+1} = char(ni.getName); %#ok
+            hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
+        end
+    end
+    if ~isempty( hostid_name )
+        if strncmp( computer, 'MAC', 3 ), 
+            master = 'en'; 
+        else
+            master = 'eth'; 
+        end
+        ndxs = find( strncmp( hostid_name, master, length(master) ) );
+        if ~isempty( ndxs ),
+            hostid_name = hostid_name(ndxs); 
+            hostid_addr = hostid_addr(ndxs);
+        end
+        [ hostid_name, ndxs2 ] = sort( hostid_name );
+        hostid_addr = hostid_addr(ndxs2);
+        if isempty( ndxs )
+            % If this computer does not have any 'en*' or 'eth*' ports, we
+            % are only going to trust the first hostID we find.
+            hostid_name = hostid_name(1);
+            hostid_addr = hostid_addr(1);
+        end
+    end
+    p_hostid_name = hostid_name;
+    p_hostid_addr = hostid_addr;
 else
-    lic.signature = signature;
-    lic.status = 'VERIFIED';
+    hostid_name = p_hostid_name;
+    hostid_addr = p_hostid_addr;
 end
+
+%%%%%%%%%%%%%%
+% END COMMON %
+%%%%%%%%%%%%%%
 
 % Copyright 2012 CVX Research, Inc.
 % See the file COPYING.txt for full copyright information.

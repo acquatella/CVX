@@ -1,5 +1,6 @@
 function shim = cvx_mosek( shim )
 
+global cvx___
 if ~isempty( shim.solve ),
     return
 end
@@ -52,49 +53,16 @@ if isempty( shim.error ) && ~usejava('jvm'),
 end
 if isempty( shim.error ),
     error_msg = 'A CVX Professional license is required.';
-    check_license;
+    try
+        cvx___.license = full_verify( cvx___.license );
+        if cvx___.license.days_left >= 0, error_msg = ''; end
+    catch %#ok
+    end
     shim.error = error_msg;
 end
 if isempty( shim.error ),
     shim.check = @check;
     shim.solve = @solve;
-end
-
-function check_license
-global cvx___
-try
-    lic = cvx___.license;
-    if isempty( lic ) || isempty( lic.signature ), return; end
-    expiration = [ 10000, 100, 1 ] * sscanf( lic.expiration, '%d-%d-%d' );
-    today = java.util.Date();
-    today = today.getDay() + 100 * ( today.getMonth() + 100 * ( today.getYear() + 1900 ) );
-    if today > expiration, return; end
-    if ~isempty(lic.username)
-        username = char(java.lang.System.getProperty('user.name'));
-        if ~isequal(username,lic.username), return; end
-    end
-    if ~isempty(lic.hostid),
-        found_hostid = false;
-        networks = java.net.NetworkInterface.getNetworkInterfaces();
-        while networks.hasMoreElements(),
-            ni = networks.nextElement();
-            hostid = sprintf('%02x',rem(double(ni.getHardwareAddress())+256,256));
-            if isequal( hostid, lic.hostid ),
-                found_hostid = true;
-                break
-            end
-        end
-        if ~found_hostid,
-            return
-        end
-    end
-    message = [ lic.name, '|', lic.organization, '|', lic.email, '|', lic.username, '|', lic.hostid, '|', lic.expiration ];
-    dsa = java.security.Signature.getInstance('SHA1withDSA');
-    dsa.initVerify(cvx_license('*key*'));
-    dsa.update(unicode2native(message));
-    if ~dsa.verify(lic.signature), return; end
-    assignin('caller','error_msg','');
-catch %#ok
 end
 
 function found_bad = check( nonls )
@@ -295,6 +263,119 @@ if ~isempty( xscale ),
     z(xscale) = z(xscale) / alpha;
 end
 iters = 0;
+
+%%%%%%%%%%%%%%%%%%%%%
+% BEGIN SHIM_COMMON %
+%%%%%%%%%%%%%%%%%%%%%
+
+function public_key = get_public_key
+try
+    public_key = cvx_license( '*key*' );
+catch %#ok
+    public_key = int8(0);
+end
+
+%%%%%%%%%%%%%%%%
+% BEGIN COMMON %
+%%%%%%%%%%%%%%%%
+
+function lic = full_verify( lic )
+try
+    try
+        signature = lic.signature;
+    catch %#ok
+        signature = [];
+        lic = struct;
+    end
+    lic.signature = [];
+    lic.status = 'INVALID:FORMAT';
+    lic.days_left = -Inf;
+    if ~isempty( lic.username ) && ~any( strcmp( get_username, lic.username ) ),
+        lic.status = 'INVALID:USER';
+        return
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x) strcmp(x,lic.hostid), get_hostid ) ),
+        lic.status = 'INVALID:HOSTID';
+        return
+    end
+    parser = java.text.SimpleDateFormat('yyyy-MM-dd');
+    try
+        expire = parser.parse(lic.expiration);
+    catch %#ok
+        lic.status = 'CORRUPT:EXPIRATION';
+        lic.days_left = -Inf;
+        return
+    end
+    today = java.util.Date;
+    lic.days_left = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
+    if lic.days_left < 0,
+        lic.status = 'EXPIRED';
+        return
+    end
+    message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+    dsa = java.security.Signature.getInstance('SHA1withDSA');
+    dsa.initVerify(get_public_key);
+    dsa.update(unicode2native(message));
+    if ~dsa.verify(signature),
+        lic.status = 'INVALID:SIGNATURE';
+        lic.days_left = -Inf;
+    else
+        lic.signature = signature;
+        lic.status = 'VERIFIED';
+    end
+catch %#ok
+end
+
+function username = get_username
+persistent p_username
+if isempty( p_username )
+    p_username = char(java.lang.System.getProperty('user.name'));
+end
+username = p_username;
+
+function [ hostid_addr, hostid_name ] = get_hostid
+persistent p_hostid_name p_hostid_addr
+if isempty( p_hostid_addr )
+    hostid_name = {}; 
+    hostid_addr = {};
+    networks = java.net.NetworkInterface.getNetworkInterfaces();
+    while networks.hasMoreElements(),
+        ni = networks.nextElement();
+        hostid = ni.getHardwareAddress();
+        if ~isempty(hostid),
+            hostid_name{end+1} = char(ni.getName); %#ok
+            hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
+        end
+    end
+    if ~isempty( hostid_name )
+        if strncmp( computer, 'MAC', 3 ), 
+            master = 'en'; 
+        else
+            master = 'eth'; 
+        end
+        ndxs = find( strncmp( hostid_name, master, length(master) ) );
+        if ~isempty( ndxs ),
+            hostid_name = hostid_name(ndxs); 
+            hostid_addr = hostid_addr(ndxs);
+        end
+        [ hostid_name, ndxs2 ] = sort( hostid_name );
+        hostid_addr = hostid_addr(ndxs2);
+        if isempty( ndxs )
+            % If this computer does not have any 'en*' or 'eth*' ports, we
+            % are only going to trust the first hostID we find.
+            hostid_name = hostid_name(1);
+            hostid_addr = hostid_addr(1);
+        end
+    end
+    p_hostid_name = hostid_name;
+    p_hostid_addr = hostid_addr;
+else
+    hostid_name = p_hostid_name;
+    hostid_addr = p_hostid_addr;
+end
+
+%%%%%%%%%%%%%%
+% END COMMON %
+%%%%%%%%%%%%%%
 
 % Copyright 2012 CVX Research, Inc.
 % See the file COPYING.txt for full copyright information.
