@@ -250,7 +250,7 @@ params.OutputFlag = double(~quiet);
 params.InfUnbdInfo = 1;
 params.QCPDual = +need_duals;
 params.BarConvTol = max(prec(2)/10,prec(1));
-params.BarQCPConvTol = max(prec(2)/10,prec(1));
+% params.BarQCPConvTol = max(prec(2)/10,prec(1));
 params.FeasibilityTol = max([1e-9,prec(2)/10,prec(1)]);
 params.OptimalityTol = max([1e-9,prec(2)/10,prec(1)]);
 try
@@ -259,48 +259,53 @@ catch errmsg
     error( 'CVX:SolverError', check_gurobi_error( errmsg ) );
 end
 tol = prec(2);
-while true,
-    switch res.status,
-        case { 'NUMERIC', 'INF_OR_UNBD' },
-            x = NaN*ones(n,1);
-            if need_duals,
-                y = NaN * ones(m,1);
-                z = NaN * ones(n,1);
-            end
+x = []; y = []; z = [];
+switch res.status,
+    case { 'NUMERIC', 'INF_OR_UNBD' },
+        tol = Inf;
+    case 'INFEASIBLE',
+        status = 'Infeasible';
+        if ~isfield( res, 'farkasdual' ),
             tol = Inf;
-        case 'INFEASIBLE',
-            status = 'Infeasible';
-            x = NaN*ones(n,1); 
-            if need_duals,
-                y = - res.farkasdual / abs( b' * res.farkasdual );
-                z = prob.A' * y;
-            end
-        case 'UNBOUNDED',
-            status = 'Unbounded'; 
+        elseif need_duals,
+            y = - res.farkasdual / abs( b' * res.farkasdual );
+            z = prob.A' * y;
+        end
+    case 'UNBOUNDED',
+        status = 'Unbounded';
+        if ~isfield( res, 'unbdray' ),
+            tol = Inf;
+        else
             x = res.unbdray / abs( prob.Obj' * res.unbdray );
-            if need_duals,
-                y = NaN * ones(m,1);
-                z = NaN * ones(n,1);
-            end
-        case { 'OPTIMAL', 'SUBOPTIMAL' },
-            status = 'Solved';
+        end
+    case { 'OPTIMAL', 'SUBOPTIMAL' },
+        status = 'Solved';
+        if isfield( res, 'x' ),
             x = res.x;
-            if need_duals,
+        else
+            tol = Inf;
+        end
+        if tol < Inf && need_duals,
+            if ~isfield( res, 'pi' ),
+                tol = Inf;
+            else
                 y = res.pi;
                 z = prob.Obj - prob.A' * y;
             end
-            if res.status(1) == 'S',
-                if prec(1) == prec(2),
-                    tol = prec(3); 
-                else
-                end
-            end
-        otherwise,
-            error( 'Unknown Gurobi status: %s', res.status );
-    end
-    break;
+        end
+        if status(1) == 'S' && tol < Inf && prec(1) == prec(2),
+            tol = prec(3); 
+        end
+    otherwise,
+        tol = Inf;
+        warning( 'CVX:SolverWarning', 'Gurobi returned an unknown status "%s". Please contact CVX Research Support.', res.status );
 end
-if tol > prec(3),
+if isempty(x), x = NaN * ones(n,1); end
+if need_duals,
+    if isempty(y), y = NaN * ones(m,1); end
+    if isempty(z), z = NaN * ones(n,1); end
+end
+if tol == Inf,
     status = 'Failed';
 elseif tol > prec(2),
     status = [ 'Inaccurate/', status ];
