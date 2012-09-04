@@ -249,10 +249,10 @@ end
 params.OutputFlag = double(~quiet);
 params.InfUnbdInfo = 1;
 params.QCPDual = +need_duals;
-params.BarConvTol = max(prec(2)/10,prec(1));
-% params.BarQCPConvTol = max(prec(2)/10,prec(1));
-params.FeasibilityTol = max([1e-9,prec(2)/10,prec(1)]);
-params.OptimalityTol = max([1e-9,prec(2)/10,prec(1)]);
+params.BarConvTol = prec(2);
+params.BarQCPConvTol = prec(2);
+params.FeasibilityTol = max([1e-9,prec(2)]);
+params.OptimalityTol = max([1e-9,prec(2)]);
 try
     res = cvx_run_solver( @gurobi, prob, params, 'res', settings, 2 );
 catch errmsg
