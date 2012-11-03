@@ -467,7 +467,11 @@ if isempty( p_hostid_addr )
     networks = java.net.NetworkInterface.getNetworkInterfaces();
     while networks.hasMoreElements(),
         ni = networks.nextElement();
-        hostid = ni.getHardwareAddress();
+        try
+            hostid = ni.getHardwareAddress();
+        catch %#ok
+            hostid = [];
+        end
         if ~isempty(hostid),
             hostid_name{end+1} = char(ni.getName); %#ok
             hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
