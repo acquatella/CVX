@@ -311,7 +311,27 @@ try
         lic.status = 'EXPIRED';
         return
     end
-    message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+    if isfield( lic, 'prefix' ) && ~isempty( lic.prefix ),
+        if isempty( lic.username ),
+            t_username = '';
+        elseif iscell( lic.username ),
+            t_username = sprintf( '%s,', lic.username{:} );
+            t_username(end) = [];
+        else
+            t_username = lic.username;
+        end
+        if isempty( lic.hostid ),
+            t_hostid = '';
+        elseif iscell( lic.hostid ),
+            t_hostid = sprintf( '%s,', lic.hostid{:} );
+            t_hostid(end) = [];
+        else
+            t_hostid = lic.hostid;
+        end
+        message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
+    else
+        message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+    end
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(get_public_key);
     dsa.update(unicode2native(message));

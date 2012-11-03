@@ -4,21 +4,32 @@ function [ license, ltext ] = cvx_license( varargin )
 %    This file performs various functions needed to perform license
 %    management for the professional features of CVX.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Quick exit for cvx_global %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if ~usejava( 'jvm' ),
+    error( 'CVX:Licensing', 'The CVX licensing mechanism requires Java.' );
+elseif nargin == 1 && isstruct( varargin{1} ),
+    license = full_verify( varargin{1} );
+    return
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Full processing for cvx_setup %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 persistent blank fs
 if isempty( fs ),
     blank = struct( 'name', '', 'organization', '', 'email', '', ...
         'license_type', '', 'username', {{}}, 'hostid', {{}}, ...
-        'expiration', '0000-00-00', 'signature', int8([]), ...
+        'expiration', '0000-00-00', 'signature', int8([]), 'prefix', '', ...
         'status', 'NOTFOUND', 'days_left', -Inf, 'filename', '' );
     if strncmp( computer, 'PC', 2 ), 
         fs = '\'; 
     else
         fs = '/'; 
     end
-end
-
-if ~usejava( 'jvm' ),
-    error( 'CVX:NeedJVM', 'The CVX licensing mechanism requires Java.' );
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -33,9 +44,6 @@ for k = 1 : nargin,
     arg = varargin{k};
     if isempty( arg ),
         continue;
-    elseif isstruct( arg ),
-        license = full_verify( arg );
-        return
     elseif ischar( arg ),
         switch arg,
             case '*key*',
@@ -58,7 +66,6 @@ for k = 1 : nargin,
         error( 'CVX:Licensing', 'Invalid use of the CVX licensing system.' );
     end
 end
-nargs = length( lnames ) - 1;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Look for all available license files %
@@ -70,11 +77,12 @@ nargs = length( lnames ) - 1;
 % --- Home directory
 % --- Desktop directory
 if length( lnames ) <= 1,
-    lname = 'cvx_license.mat';
-    lnames = [ lnames ; which( 'cvx_license.mat', '-all' ) ];
+    dname = 'cvx_license.dat';
+    lnames = [ lnames ; which( dname, '-all' ) ];
     homedir = char(java.lang.System.getProperty('user.home'));
-    lnames{end+1} = [ homedir, fs, lname ];
-    lnames{end+1} = [ homedir, fs, 'Desktop', fs, lname ];
+    lnames{end+1} = [ homedir, fs, dname ];
+    lnames{end+1} = [ homedir, fs, 'Desktop', fs, dname ];
+    lnames{end+1} = [ homedir, fs, 'Downloads', fs, dname ];
     [ dummy, ndxs ] = sort( lnames );
     tt = [ true ; ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
     lnames = lnames( sort(ndxs(tt)) );
@@ -96,7 +104,7 @@ for k = 1 : length(lnames),
     for kk = 1 : length(licenses),
         if ( isequal( licenses(kk).expiration, lic.expiration ) && ...
              isequal( licenses(kk).signature, lic.signature ) ),
-            licenses(kk).filename{end+1} = lic.filename;
+            licenses(kk).filename{end+1} = lic.filename; %#ok
             found = true;
             break
         end
@@ -106,7 +114,7 @@ for k = 1 : length(lnames),
         if isempty( licenses ),
             licenses = lic;
         else
-            licenses(end+1) = lic;
+            licenses(end+1) = lic; %#ok
         end
         if lic.days_left > best_days,
             best_days = lic.days_left;
@@ -214,7 +222,7 @@ if isfield( lic, 'filename' ) && ~isempty( lic.filename ),
         fprefix = fprefix2;
     end
     for k = 1 : length(fnames),
-        ltext{end+1} = sprintf( fprefix, prefix, fnames{k} );
+        ltext{end+1} = sprintf( fprefix, prefix, fnames{k} ); %#ok
         if nargin > 3, prefix = prefix2; end
         fprefix = fprefix2;
     end
@@ -294,30 +302,75 @@ end
 public_key = p_public_key;
 
 function lic = load_and_verify( fname, blank, fs )
-found = false;
-if isempty( fname ),
-    try
+persistent base64
+if isempty( base64 ),
+    base64 = uint8(zeros(1,256)+65);
+    base64(uint8(['A':'Z', 'a':'z', '0':'9', '+/=']))= 0:64;
+    base64(uint8('-_'))= 62:63;
+end
+try
+    found = false;
+    if isempty( fname ) && exist( [ prefdir, fs, 'cvx_prefs.mat' ], 'file' ),
         lic = load( [ prefdir, fs, 'cvx_prefs.mat' ], 'license' );
         lic = lic.license;
-        if isempty( lic ),
-            lic = blank;
+        found = ~isempty( lic );
+        if ~isfield( lic, 'prefix' ), lic.prefix = ''; end
+        lic.filename = '(from saved preferences)';
+    elseif ~exist( fname, 'file' ),
+        lic = blank;
+    elseif strcmp( fname(end-3:end), '.dat' ),
+        fid = fopen( fname );
+        lic = textscan(fid,'%s%s','delimiter','=');
+        fclose( fid );
+        lic{2}(1:end-1) = cellfun(@(x)native2unicode(x,'UTF-8'),lic{2}(1:end-1),'UniformOutput',false);
+        lic = cell2struct(lic{2},lic{1});
+        if isempty(lic.username),
+            lic.username = {};
         else
-            lic = full_verify( lic );
+            tmp = [0,strfind(lic.username,','),length(lic.username)+1];
+            usernames = cell(1,length(tmp)-1);
+            for k = 1 : length(usernames),
+                usernames{k} = lic.username(tmp(k)+1:tmp(k+1)-1);
+            end
+            lic.username = usernames;
         end
-    catch %#ok
-        lic = blank;
-    end
-    lic.filename = '(from saved preferences)';
-elseif exist( fname, 'file' ),
-    try
-        lic = full_verify( load( fname ) );
+        if isempty(lic.hostid),
+            lic.hostid = {};
+        else
+            tmp = [0,strfind(lic.hostid,','),length(lic.hostid)+1];
+            hostids = cell(1,length(tmp)-1);
+            for k = 1 : length(hostids),
+                hostids{k} = lic.hostid(tmp(k)+1:tmp(k+1)-1);
+            end
+            lic.hostid = hostids;
+        end
+        x = base64( lic.signature );
+        nbytes = length(x);
+        nchunks = ceil( nbytes / 4 );
+        x( end + 1 : 4 * nchunks ) = 0;
+        x = reshape( x, 4, nchunks );
+        y = [ bitshift( x(1,:), 2 ) ; bitshift( x(2,:), 4 ) ; bitshift( x(3,:), 6 ) ]; 
+        y = bitor( y, [ bitshift( x(2,:), -4 ) ; bitshift( x(3,:), -2 ) ; x(4,:) ] );
+        y = y(:)';
+        ndxs = strfind(y,'|');
+        lic.prefix = char(y(1:ndxs(1)-1));
+        y = int16(y(ndxs(1)+1:ndxs(end)-1));
+        y(y>127) = y(y>127) - 256;
+        lic.signature = int8(y);
+        found = true;
         lic.filename = fname;
-    catch %#ok
-        lic = blank;
-        lic.status = 'CORRUPT';
+    else
+        lic = load( fname );
+        if ~isfield( lic, 'prefix' ), lic.prefix = ''; end
+        lic.filename = fname;
+        found = true;
     end
-else
+    if found,
+        lic = full_verify( lic );
+    end
+catch %#ok
     lic = blank;
+    if found, lic.status = 'CORRUPT'; end
 end
 lic2 = lic;
 try
@@ -360,10 +413,30 @@ try
         lic.status = 'EXPIRED';
         return
     end
-    message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+    if isfield( lic, 'prefix' ) && ~isempty( lic.prefix ),
+        if isempty( lic.username ),
+            t_username = '';
+        elseif iscell( lic.username ),
+            t_username = sprintf( '%s,', lic.username{:} );
+            t_username(end) = [];
+        else
+            t_username = lic.username;
+        end
+        if isempty( lic.hostid ),
+            t_hostid = '';
+        elseif iscell( lic.hostid ),
+            t_hostid = sprintf( '%s,', lic.hostid{:} );
+            t_hostid(end) = [];
+        else
+            t_hostid = lic.hostid;
+        end
+        message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
+    else
+        message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+    end
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(get_public_key);
-    dsa.update(unicode2native(message));
+    dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
     else
