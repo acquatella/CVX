@@ -252,8 +252,13 @@ if ~isempty( lic.username ),
     else
         status = ' (MISMATCH)';
     end
-    l_username = sprintf( '%s/', lic.username{:} );
-    ltext{end+1} = sprintf( '%sNamed user: %s%s', prefix, l_username(1:end-1), status );
+    if ischar( lic.username ),
+        l_username = lic.username;
+    else
+        l_username = sprintf( '%s, ', lic.username{:} );
+        l_username = l_username(1:end-2);
+    end
+    ltext{end+1} = sprintf( '%sNamed user: %s%s', prefix, l_username, status );
 end
 if ~isempty( lic.hostid ),
     if any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ),
@@ -263,8 +268,13 @@ if ~isempty( lic.hostid ),
     else
         status = '(MISMATCH)';
     end
-    l_hostid = sprintf( '%s/', lic.hostid{:} );
-    ltext{end+1} = sprintf( '%sHost ID: %s (%s)', prefix, l_hostid(1:end-1), status );
+    if ischar( lic.hostid ),
+        l_hostid = lic.hostid;
+    else
+        l_hostid = sprintf( '%s, ', lic.hostid{:} );
+        l_hostid = l_hostid(1:end-2);
+    end
+    ltext{end+1} = sprintf( '%sHost ID: %s (%s)', prefix, l_hostid, status );
 end
 parser = java.text.SimpleDateFormat('yyyy-MM-dd');
 try
