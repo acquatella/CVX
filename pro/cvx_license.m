@@ -442,10 +442,10 @@ try
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) )
+        lic.status = 'INVALID:HOSTID';
     elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x) strcmpi(x,lic.hostid), get_hostid ) ),
-        lic.status = 'INVALID:HOSTID';
     elseif days_left < 0,
         lic.status = 'EXPIRED';
     else
