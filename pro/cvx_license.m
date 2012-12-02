@@ -555,7 +555,7 @@ for k = 1 : length(rndx) - 1,
     end
 end
 lines{end+1} = 'Please report this error to CVX Support by visiting';
-lines{end+1} = '    http://support.cvxr.com/support/tickets/new'
+lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
 lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
 lines{end+1} = 'output of this function in your report. Thank you!';
 lines{end+1} = '---------------------------------------------------------------';
