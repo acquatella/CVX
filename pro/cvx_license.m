@@ -11,6 +11,9 @@ function [ license, ltext ] = cvx_license( varargin )
 if ~usejava( 'jvm' ),
     error( 'CVX:Licensing', 'The CVX licensing mechanism requires Java.' );
 elseif nargin == 1 && isstruct( varargin{1} ),
+    if numel( varargin{1} ) ~= 1,
+        error( 'CVX:Licensing', 'A single license structure is expected.' );
+    end 
     license = full_verify( varargin{1} );
     return
 end
@@ -84,7 +87,7 @@ if length( lnames ) <= 1,
     lnames{end+1} = [ homedir, fs, 'Desktop', fs, dname ];
     lnames{end+1} = [ homedir, fs, 'Downloads', fs, dname ];
     [ dummy, ndxs ] = sort( lnames );
-    tt = [ true ; ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
+    tt = [ true , ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
     lnames = lnames( sort(ndxs(tt)) );
 end
 
@@ -92,16 +95,18 @@ end
 % Test each license %
 %%%%%%%%%%%%%%%%%%%%%
 
-best_days = -Inf;
+best_days = -1;
 best_ndx = 0;
-licenses = [];
+licenses = blank;
 found_saved = false;
 for k = 1 : length(lnames),
     lic = load_and_verify( lnames{k}, blank, fs );
     if isequal( lic.status, 'NOTFOUND' ), continue; end
-    if k == 1, found_saved = true; end
+    if k == 1, 
+        found_saved = true; 
+    end
     found = false;
-    for kk = 1 : length(licenses),
+    for kk = 2 : length(licenses),
         if ( isequal( licenses(kk).expiration, lic.expiration ) && ...
              isequal( licenses(kk).signature, lic.signature ) ),
             licenses(kk).filename{end+1} = lic.filename; %#ok
@@ -111,12 +116,16 @@ for k = 1 : length(lnames),
     end
     if ~found,
         lic.filename = { lic.filename };
-        if isempty( licenses ),
-            licenses = lic;
-        else
+        try
             licenses(end+1) = lic; %#ok
+        catch %#ok
+            lic2 = blank;
+            for k = fieldnames(lic2)',
+                try lic2.(k{1}) = lic.(k{1}); catch end %#ok
+            end
+            licenses(end+1) = lic2; %#ok
         end
-        if lic.days_left > best_days,
+        if isequal( lic.status, 'VERIFIED' ) && lic.days_left > best_days,
             best_days = lic.days_left;
             best_ndx = length(licenses);
         end
@@ -141,10 +150,11 @@ if verbose,
         ltext{end+1} = sprintf( '    Host IDs: %s (%s)', hostid_addr{1}, hostid_name{1} );
     end
     ndxs = false(1,length(licenses));
+    ndxs(1) = true;
     ltext{end+1} = 'Installed license:';
     if found_saved,
-        ltext = print_license(licenses(1),'    ',ltext);
-        ndxs(1) = true;
+        ltext = print_license(licenses(2),'    ',ltext);
+        ndxs(2) = true;
     else
         ltext{end+1} = '    No license installed.';
     end
@@ -217,7 +227,10 @@ if isfield( lic, 'filename' ) && ~isempty( lic.filename ),
     fprefix = '%sFile: %s';
     fprefix2 = '%sAlso in file: %s';
     fnames = lic.filename;
-    if fnames{1}(1) == '(',
+    if ~iscell( fnames ),
+        fnames = { fnames };
+    end
+    if ~isempty( fnames ) && ~isempty( fnames{1} ) && fnames{1}(1) == '(',
         fnames(1) = [];
         fprefix = fprefix2;
     end
@@ -247,7 +260,7 @@ if ~isempty( lic.license_type ),
     ltext{end+1} = sprintf( '%sLicense type: %s', prefix, lic.license_type );
 end
 if ~isempty( lic.username ),
-    if any( strcmp( get_username, lic.username ) ),
+    if any( strcmpi( get_username, lic.username ) ),
         status = '';
     else
         status = ' (MISMATCH)';
@@ -261,12 +274,21 @@ if ~isempty( lic.username ),
     ltext{end+1} = sprintf( '%sNamed user: %s%s', prefix, l_username, status );
 end
 if ~isempty( lic.hostid ),
-    if any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ),
-        status = '';
-    elseif isempty( get_hostid ),
-        status = '(MISMATCH: no host id)';
+    [ hostid_addr, hostid_name ] = get_hostid;
+    ndxs = cellfun( @(x)any(strcmp(x,lic.hostid)), hostid_addr );
+    if any( ndxs ),
+        hostid_name = hostid_name(ndxs);
+        hostid_name = hostid_name(~cellfun('isempty',hostid_name));
+        if isempty( hostid_name ),
+            status = '';
+        else
+            status = sprintf( '%s,', hostid_name{ndxs} );
+            status = sprintf( ' (%s)', status(1:end-1) );
+        end
+    elseif isempty( hostid_addr ),
+        status = ' (MISMATCH: no host id)';
     else
-        status = '(MISMATCH)';
+        status = ' (MISMATCH)';
     end
     if ischar( lic.hostid ),
         l_hostid = lic.hostid;
@@ -274,7 +296,7 @@ if ~isempty( lic.hostid ),
         l_hostid = sprintf( '%s, ', lic.hostid{:} );
         l_hostid = l_hostid(1:end-2);
     end
-    ltext{end+1} = sprintf( '%sHost ID: %s (%s)', prefix, l_hostid, status );
+    ltext{end+1} = sprintf( '%sHost ID: %s%s', prefix, l_hostid, status );
 end
 parser = java.text.SimpleDateFormat('yyyy-MM-dd');
 try
@@ -283,21 +305,27 @@ catch %#ok
     lic.expiration = '0000-01-01';
     expire = parser.parse(lic.expiration);
 end
-today = java.util.Date;
-remain_days = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
-if remain_days < -365
+if lic.days_left < -365
     ltext{end+1} = sprintf( '%sEXPIRED: %s', prefix, lic.expiration );
-elseif remain_days < 0
-    ltext{end+1} = sprintf( '%sEXPIRED: %s (%d days ago)', prefix, lic.expiration, -remain_days );
+elseif lic.days_left < 0
+    if lic.days_left == -1, plural = ''; else plural = 's'; end
+    ltext{end+1} = sprintf( '%sEXPIRED: %s (%d day%s ago)', prefix, lic.expiration, -lic.days_left, plural );
 else
-    ltext{end+1} = sprintf( '%sExpiration: %s (%g days remaining)', prefix, lic.expiration, remain_days );
+    lic.days_left = abs(lic.days_left);
+    if lic.days_left == 1, plural = ''; else plural = 's'; end
+    ltext{end+1} = sprintf( '%sExpiration: %s (%g day%s remaining)', prefix, lic.expiration, lic.days_left, plural );
 end
-if isequal( lic.status, 'VERIFIED'  ),
-    ltext{end+1} = sprintf( '%sSignature: valid', prefix );
-elseif isequal( lic.status, 'INVALID:SIGNATURE' ) || isequal( lic.status, 'CORRUPT:SIGNATURE' ),
+if isequal( lic.status, 'INVALID:SIGNATURE' ) || isequal( lic.status, 'CORRUPT:SIGNATURE' ),
     ltext{end+1} = sprintf( '%sSignature: INVALID', prefix );
 else
-    ltext{end+1} = sprintf( '%sSignature: unverified', prefix );
+    ltext{end+1} = sprintf( '%sSignature: valid', prefix );
+end
+if strncmp( lic.status, 'UNEXPECTED ERROR:', 17 ),
+    rndx = [ 0, regexp( lic.status, '\n' ), length(lic.status) + 1 ];
+    for k = 1 : length(rndx)-1;
+        ltext{end+1} = sprintf('%s%s',prefix,lic.status(rndx(k)+1:rndx(k+1)-1));
+        spacer = '    ';
+    end
 end
 
 function public_key = get_public_key
@@ -319,21 +347,17 @@ if isempty( base64 ),
     base64(uint8('-_'))= 62:63;
 end
 try
-    found = false;
+    lic = [];
     if isempty( fname ) && exist( [ prefdir, fs, 'cvx_prefs.mat' ], 'file' ),
         lic = load( [ prefdir, fs, 'cvx_prefs.mat' ], 'license' );
         lic = lic.license;
-        found = ~isempty( lic );
-        if ~isfield( lic, 'prefix' ), lic.prefix = ''; end
-        lic.filename = '(from saved preferences)';
-    elseif ~exist( fname, 'file' ),
-        lic = blank;
-    elseif strcmp( fname(end-3:end), '.dat' ),
+        fname = '(from saved preferences)';
+    elseif exist( fname, 'file' ),
         fid = fopen( fname );
         lic = textscan(fid,'%s%s','delimiter','=');
         fclose( fid );
         lic{2}(1:end-1) = cellfun(@(x)native2unicode(x,'UTF-8'),lic{2}(1:end-1),'UniformOutput',false);
-        lic = cell2struct(lic{2},lic{1});
+        lic = cell2struct( lic{2}, lic{1} );
         if isempty(lic.username),
             lic.username = {};
         else
@@ -367,29 +391,18 @@ try
         y = int16(y(ndxs(1)+1:ndxs(end)-1));
         y(y>127) = y(y>127) - 256;
         lic.signature = int8(y);
-        found = true;
-        lic.filename = fname;
+    end
+    if isempty( lic ), 
+        lic = blank;
     else
-        lic = load( fname );
-        if ~isfield( lic, 'prefix' ), lic.prefix = ''; end
-        lic.filename = fname;
-        found = true;
+        lic = full_verify( lic ); 
     end
-    if found,
-        lic = full_verify( lic );
-    end
-catch %#ok
-    lic = blank;
-    if found, lic.status = 'CORRUPT'; end
-end
-lic2 = lic;
-try
-    lic2(2) = blank; %#ok
-catch %#ok
-    lic = blank;
-    for k = fieldnames(blank)',
-        try lic.(k{1}) = lic2.(k{1}); catch end %#ok
-    end
+    lic.filename = fname;
+catch exc
+    if ~isstruct( lic ) || numel( lic ) ~= 1, lic = blank; end
+    lic.status = my_get_report(exc);
+    lic.signature = [];
+    lic.days_left = -Inf;
 end
 
 %%%%%%%%%%%%%%%%
@@ -400,66 +413,50 @@ function lic = full_verify( lic )
 try
     signature = lic.signature;
     lic.signature = [];
-    lic.days_left = -Inf;
-    if ~isempty( lic.username ) && ~any( strcmp( get_username, lic.username ) ),
-        lic.status = 'INVALID:USER';
-        return
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x) strcmp(x,lic.hostid), get_hostid ) ),
-        lic.status = 'INVALID:HOSTID';
-        return
-    end
     parser = java.text.SimpleDateFormat('yyyy-MM-dd');
-    try
-        expire = parser.parse(lic.expiration);
-    catch %#ok
-        lic.status = 'CORRUPT:EXPIRATION';
-        lic.days_left = -Inf;
-        return
-    end
+    expire = parser.parse(lic.expiration);
     today = java.util.Date;
     days_left = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
-    if days_left < 0,
-        lic.days_left = days_left;
-        lic.status = 'EXPIRED';
-        return
+    if ~isfield( lic, 'prefix' ),
+        lic.prefix = '';
     end
-    if isfield( lic, 'prefix' ) && ~isempty( lic.prefix ),
-        if isempty( lic.username ),
-            t_username = '';
-        elseif iscell( lic.username ),
-            t_username = sprintf( '%s,', lic.username{:} );
-            t_username(end) = [];
-        else
-            t_username = lic.username;
-        end
-        if isempty( lic.hostid ),
-            t_hostid = '';
-        elseif iscell( lic.hostid ),
-            t_hostid = sprintf( '%s,', lic.hostid{:} );
-            t_hostid(end) = [];
-        else
-            t_hostid = lic.hostid;
-        end
-        message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
+    if isempty( lic.username ),
+        t_username = '';
+    elseif ischar( lic.username ),
+        t_username = lic.username;
     else
-        message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+        t_username = sprintf( '%s,', lic.username{:} );
+        t_username(end) = [];
     end
+    if isempty( lic.hostid ),
+        t_hostid = '';
+    elseif ischar( lic.hostid ),
+        t_hostid = lic.hostid;
+    else
+        t_hostid = sprintf( '%s,', lic.hostid{:} );
+        t_hostid(end) = [];
+    end
+    message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(get_public_key);
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
+    elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
+        lic.status = 'INVALID:USER';
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x) strcmpi(x,lic.hostid), get_hostid ) ),
+        lic.status = 'INVALID:HOSTID';
+    elseif days_left < 0,
+        lic.status = 'EXPIRED';
     else
-        lic.days_left = days_left;
         lic.signature = signature;
         lic.status = 'VERIFIED';
     end
-catch %#ok
-    if numel( lic ) ~= 1 || ~isstruct( lic ),
-        lic = [];
-    end
-    lic.status = 'ERROR';
-    lic.status = 'INVALID:FORMAT';
+    lic.days_left = days_left;
+catch exc 
+    if ~isstruct( lic ) || numel( lic ) ~= 1, lic = []; end
+    lic.status = my_get_report(exc);
+    lic.days_left = -Inf;
 end
 
 function username = get_username
@@ -517,6 +514,52 @@ end
 %%%%%%%%%%%%%%
 % END COMMON %
 %%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%
+% ERROR PROCESSING %
+%%%%%%%%%%%%%%%%%%%%
+
+function estr = my_get_report( exc )
+try
+    errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
+    errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
+catch %#ok
+    errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
+end
+width = 64;
+lines = { 'UNEXPECTED ERROR: ---------------------------------------------' };
+rndx = [ 0, regexp( errmsg, '\n' ), length(errmsg) + 1 ];
+for k = 1 : length(rndx) - 1,
+    line = errmsg( rndx(k)+1 : rndx(k+1) - 1 );
+    if ~isempty( line ),
+        emax     = length( line );
+        n_indent = 0;
+        if emax > width,
+            f_indent = sum( regexp( line, '[^ ]', 'once' ) - 1 );
+            sndxs = find( line == ' ' );
+        end
+        while true,
+            if emax + n_indent <= width || isempty( sndxs ),
+                lines{end+1} = [ 32 * ones(1,n_indent), line ];
+                break;
+            end
+            sndx = sndxs( sndxs <= width - n_indent + 1 );
+            if isempty( sndx ), sndx = sndxs(1); end
+            chunk = line(1:sndx(end)-1);
+            lines{end+1} = [ 32*ones(1,n_indent), chunk ]; %#ok
+            line(1:sndx(end)) = [];
+            sndxs = sndxs(length(sndx)+1:end) - sndx(end);
+            emax = emax - sndx(end);
+            n_indent = f_indent + 4;
+        end
+    end
+end
+lines{end+1} = 'Please report this error to CVX Support by visiting';
+lines{end+1} = '    http://support.cvxr.com/support/tickets/new'
+lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
+lines{end+1} = 'output of this function in your report. Thank you!';
+lines{end+1} = '---------------------------------------------------------------';
+estr = sprintf( '%s\n', lines{:} );
 
 % Copyright 2012 CVX Research, Inc.
 % See the file COPYING.txt for full copyright information.
