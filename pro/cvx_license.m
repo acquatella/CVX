@@ -511,14 +511,6 @@ else
     hostid_addr = p_hostid_addr;
 end
 
-%%%%%%%%%%%%%%
-% END COMMON %
-%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%
-% ERROR PROCESSING %
-%%%%%%%%%%%%%%%%%%%%
-
 function estr = my_get_report( exc )
 try
     errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
@@ -560,6 +552,10 @@ lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full'
 lines{end+1} = 'output of this function in your report. Thank you!';
 lines{end+1} = '---------------------------------------------------------------';
 estr = sprintf( '%s\n', lines{:} );
+
+%%%%%%%%%%%%%%
+% END COMMON %
+%%%%%%%%%%%%%%
 
 % Copyright 2012 CVX Research, Inc.
 % See the file COPYING.txt for full copyright information.

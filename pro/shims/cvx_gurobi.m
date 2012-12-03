@@ -335,68 +335,52 @@ end
 
 function lic = full_verify( lic )
 try
-    try
-        signature = lic.signature;
-    catch %#ok
-        signature = [];
-        lic = struct;
-    end
+    signature = lic.signature;
     lic.signature = [];
-    lic.status = 'INVALID:FORMAT';
-    lic.days_left = -Inf;
-    if ~isempty( lic.username ) && ~any( strcmp( get_username, lic.username ) ),
-        lic.status = 'INVALID:USER';
-        return
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x) strcmp(x,lic.hostid), get_hostid ) ),
-        lic.status = 'INVALID:HOSTID';
-        return
-    end
     parser = java.text.SimpleDateFormat('yyyy-MM-dd');
-    try
-        expire = parser.parse(lic.expiration);
-    catch %#ok
-        lic.status = 'CORRUPT:EXPIRATION';
-        lic.days_left = -Inf;
-        return
-    end
+    expire = parser.parse(lic.expiration);
     today = java.util.Date;
-    lic.days_left = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
-    if lic.days_left < 0,
-        lic.status = 'EXPIRED';
-        return
+    days_left = ceil( ( double(expire.getTime()) - double(today.getTime) ) / 86400000 );
+    if ~isfield( lic, 'prefix' ),
+        lic.prefix = '';
     end
-    if isfield( lic, 'prefix' ) && ~isempty( lic.prefix ),
-        if isempty( lic.username ),
-            t_username = '';
-        elseif iscell( lic.username ),
-            t_username = sprintf( '%s,', lic.username{:} );
-            t_username(end) = [];
-        else
-            t_username = lic.username;
-        end
-        if isempty( lic.hostid ),
-            t_hostid = '';
-        elseif iscell( lic.hostid ),
-            t_hostid = sprintf( '%s,', lic.hostid{:} );
-            t_hostid(end) = [];
-        else
-            t_hostid = lic.hostid;
-        end
-        message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
+    if isempty( lic.username ),
+        t_username = '';
+    elseif ischar( lic.username ),
+        t_username = lic.username;
     else
-        message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, lic.username{:}, lic.hostid{:}, lic.expiration );
+        t_username = sprintf( '%s,', lic.username{:} );
+        t_username(end) = [];
     end
+    if isempty( lic.hostid ),
+        t_hostid = '';
+    elseif ischar( lic.hostid ),
+        t_hostid = lic.hostid;
+    else
+        t_hostid = sprintf( '%s,', lic.hostid{:} );
+        t_hostid(end) = [];
+    end
+    message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(get_public_key);
-    dsa.update(unicode2native(message));
-    if ~dsa.verify(signature),
+    dsa.update(unicode2native(message,'UTF-8'));
+    if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
-        lic.days_left = -Inf;
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) )
+        lic.status = 'INVALID:HOSTID';
+    elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
+        lic.status = 'INVALID:USER';
+    elseif days_left < 0,
+        lic.status = 'EXPIRED';
     else
         lic.signature = signature;
         lic.status = 'VERIFIED';
     end
-catch %#ok
+    lic.days_left = days_left;
+catch exc 
+    if ~isstruct( lic ) || numel( lic ) ~= 1, lic = []; end
+    lic.status = my_get_report(exc);
+    lic.days_left = -Inf;
 end
 
 function username = get_username
@@ -414,7 +398,11 @@ if isempty( p_hostid_addr )
     networks = java.net.NetworkInterface.getNetworkInterfaces();
     while networks.hasMoreElements(),
         ni = networks.nextElement();
-        hostid = ni.getHardwareAddress();
+        try
+            hostid = ni.getHardwareAddress();
+        catch %#ok
+            hostid = [];
+        end
         if ~isempty(hostid),
             hostid_name{end+1} = char(ni.getName); %#ok
             hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
@@ -446,6 +434,48 @@ else
     hostid_name = p_hostid_name;
     hostid_addr = p_hostid_addr;
 end
+
+function estr = my_get_report( exc )
+try
+    errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
+    errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
+catch %#ok
+    errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
+end
+width = 64;
+lines = { 'UNEXPECTED ERROR: ---------------------------------------------' };
+rndx = [ 0, regexp( errmsg, '\n' ), length(errmsg) + 1 ];
+for k = 1 : length(rndx) - 1,
+    line = errmsg( rndx(k)+1 : rndx(k+1) - 1 );
+    if ~isempty( line ),
+        emax     = length( line );
+        n_indent = 0;
+        if emax > width,
+            f_indent = sum( regexp( line, '[^ ]', 'once' ) - 1 );
+            sndxs = find( line == ' ' );
+        end
+        while true,
+            if emax + n_indent <= width || isempty( sndxs ),
+                lines{end+1} = [ 32 * ones(1,n_indent), line ];
+                break;
+            end
+            sndx = sndxs( sndxs <= width - n_indent + 1 );
+            if isempty( sndx ), sndx = sndxs(1); end
+            chunk = line(1:sndx(end)-1);
+            lines{end+1} = [ 32*ones(1,n_indent), chunk ]; %#ok
+            line(1:sndx(end)) = [];
+            sndxs = sndxs(length(sndx)+1:end) - sndx(end);
+            emax = emax - sndx(end);
+            n_indent = f_indent + 4;
+        end
+    end
+end
+lines{end+1} = 'Please report this error to CVX Support by visiting';
+lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
+lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
+lines{end+1} = 'output of this function in your report. Thank you!';
+lines{end+1} = '---------------------------------------------------------------';
+estr = sprintf( '%s\n', lines{:} );
 
 %%%%%%%%%%%%%%
 % END COMMON %
