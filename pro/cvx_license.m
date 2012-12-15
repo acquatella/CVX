@@ -10,10 +10,7 @@ function [ license, ltext ] = cvx_license( varargin )
 
 if ~usejava( 'jvm' ),
     error( 'CVX:Licensing', 'The CVX licensing mechanism requires Java.' );
-elseif nargin == 1 && isstruct( varargin{1} ),
-    if numel( varargin{1} ) ~= 1,
-        error( 'CVX:Licensing', 'A single license structure is expected.' );
-    end 
+elseif nargin == 1 && isstruct( varargin{1} ) && numel( varargin{1} ) == 1,
     license = full_verify( varargin{1} );
     return
 end
@@ -40,7 +37,6 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear_all = false;
-stored_error = '';
 lnames = { '' };
 verbose = true;
 for k = 1 : nargin,
@@ -62,7 +58,7 @@ for k = 1 : nargin,
                 elseif exist( [ arg, '.mat' ], 'file' ),
                     lnames{end+1} = [ arg, '.mat' ], %#ok
                 else
-                    stored_error = sprintf( 'License file "%s" does not exist.', arg );
+                    error( 'CVX:Licensing', 'License file "%s" does not exist.', arg );
                 end
         end
     else
@@ -86,8 +82,8 @@ if length( lnames ) <= 1,
     lnames{end+1} = [ homedir, fs, dname ];
     lnames{end+1} = [ homedir, fs, 'Desktop', fs, dname ];
     lnames{end+1} = [ homedir, fs, 'Downloads', fs, dname ];
-    [ dummy, ndxs ] = sort( lnames );
-    tt = [ true , ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
+    [ dummy, ndxs ] = sort( lnames ); dummy = dummy(:);
+    tt = [ true ; ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
     lnames = lnames( sort(ndxs(tt)) );
 end
 
@@ -217,9 +213,6 @@ if nargout == 0,
 end
 if verbose,
     fprintf( '%s\n', ltext{:} );
-end
-if ~isempty( stored_error ),
-    error( 'CVX:Licensing', stored_error );
 end
 
 function ltext = print_license( lic, prefix, ltext, prefix2 )

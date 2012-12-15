@@ -19,6 +19,19 @@ function shim = cvx_gurobi( shim )
 if ~isempty( shim.solve ),
     return
 end
+if ~usejava('jvm'),
+    shim.error = 'Java support is required.';
+elseif isempty( cvx___.license ),
+    shim.error = 'A CVX Professional license is required.';
+else
+    shim.error = 'An error occurred verifying the CVX Professional license.';
+    try
+        cvx___.license = full_verify( cvx___.license );
+        if cvx___.license.days_left >= 0, shim.error = ''; end
+    catch %#ok
+    end
+end
+aca_only = ~isempty( shim.error );
 if isempty( shim.name ),
     shim.name = 'Gurobi';
     shim.dualize = false;
@@ -36,6 +49,7 @@ if isempty( shim.name ),
                 end
             end
             if ~found,
+                aca_only = false;
                 shim.error = sprintf( 'GUROBI_HOME is set (%s), but no Gurobi MEX file was found. Please correct your installation and try again.', gurobi_dir );
             end
         end
@@ -61,7 +75,7 @@ if isempty( shim.name ),
         shim.error = 'Could not find a Gurobi MEX file.';
     end
 end
-if isempty( shim.error ),
+if aca_only || isempty( shim.error ),
     [ shim.error, shim.warning ] = install_check( shim );
 end
 if isempty( shim.error ),
@@ -81,7 +95,7 @@ end
 
 function [ error_msg, warning_msg ] = install_check( shim )
 % Test the installation with a small sample problem
-global cvx___
+global cvx___ %#ok
 prob = struct( 'Obj', 1, 'A', sparse(1,1,1), 'Sense', '>', 'RHS', 0 );
 params = struct( 'OutputFlag', false );
 error_msg = '';
@@ -108,21 +122,12 @@ if isempty( error_msg )
         error_msg = 'CVX requires Gurobi 5.0 or later.';
     else
         switch res.versioninfo.license,
-            case 1, 
+            case 1,
                 warning_msg = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
             case 5,
                 warning_msg = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a CVX Professional license is required for any non-academic use.' );
             otherwise,
-                if ~usejava('jvm'),
-                    error_msg = 'Java support is required to use Gurobi.';
-                else
-                    error_msg = 'A CVX Professional license is required.';
-                    try
-                        cvx___.license = full_verify( cvx___.license );
-                        if cvx___.license.days_left >= 0, error_msg = ''; end
-                    catch %#ok
-                    end
-                end
+                error_msg = shim.error;
         end
     end
 end
