@@ -16,74 +16,183 @@ function shim = cvx_gurobi( shim )
 % function handles cannot be saved, however. So when CVX_SOLVER_SHIM is
 % called with a saved copy of the shim, it restores those handles.
 
+global cvx___
+persistent ferror try_internal aca_only
 if ~isempty( shim.solve ),
     return
 end
-if ~usejava('jvm'),
-    shim.error = 'Java support is required.';
-elseif isempty( cvx___.license ),
-    shim.error = 'A CVX Professional license is required.';
-else
-    shim.error = 'An error occurred verifying the CVX Professional license.';
-    try
-        cvx___.license = full_verify( cvx___.license );
-        if cvx___.license.days_left >= 0, shim.error = ''; end
-    catch %#ok
+if ~ischar( ferror ),
+    aca_only = false;
+    if ~usejava('jvm'),
+        ferror = 'Java support is required.';
+    elseif isempty( cvx___.license ),
+        ferror = 'A CVX Professional license is required.';
+        aca_only = true;
+    else
+        ferror = 'An error occurred verifying the CVX Professional license.';
+        try
+            cvx___.license = full_verify( cvx___.license );
+            if cvx___.license.days_left >= 0, 
+                switch cvx___.license.license_type,
+                case { 'academic', 'trial' },
+                    try_internal = true;
+                case 'special',
+                    try_internal = ~any( strfind( cvx___.license.email, 'mosek' ) );
+                otherwise,
+                    try_internal = any( strfind( cvx___.license.license_type, '+gurobi' ) );
+                end
+                ferror = '';
+            end
+        catch exc
+            ferror = my_get_report( exc );
+        end
     end
 end
-aca_only = ~isempty( shim.error );
+if ~isempty( ferror ) && ~aca_only,
+    shim.error = ferror;
+    if isempty( shim.name ),
+        shim.name = 'Gurobi';
+    end
+    return
+end
+[ fs, ps, int_path, mext ] = cvx_version;
+fname = [ 'gurobi.', mext ];
+int_plen = length( int_path );
 if isempty( shim.name ),
     shim.name = 'Gurobi';
     shim.dualize = false;
-    mexname = [ 'gurobi.', mexext ];
-    found = exist( mexname, 'file' );
-    if ~found,
-        if strncmp( computer, 'PC', 2 ), fs = '\'; ps = ';'; else fs = '/'; ps = ':'; end
-        gurobi_dir = getenv( 'GUROBI_HOME' );
-        if ~isempty( gurobi_dir ),
-            if exist( gurobi_dir, 'dir' ),
-                mpath = [ gurobi_dir, fs, 'matlab' ];
-                if exist( [ mpath, fs, mexname ], 'file' ),
-                    shim.path = [ mpath, ps ];
-                    found = true;
-                end
-            end
-            if ~found,
-                aca_only = false;
-                shim.error = sprintf( 'GUROBI_HOME is set (%s), but no Gurobi MEX file was found. Please correct your installation and try again.', gurobi_dir );
-            end
-        end
+    flen = length(fname);
+    fpaths = { [ int_path, fs, 'gurobi', fs, mext(4:end), fs, fname ] };
+    fpaths = [ fpaths ; which( fname, '-all' ) ];
+    switch mext,
+        case 'mexmaci64', d1 = '/Library/gurobi*'; d2 = '/Library/'; d3 = 'mac64';
+        case 'mexmaci',   d1 = '/Library/gurobi*'; d2 = '/Library/'; d3 = 'mac32';
+        case 'mexa64',    d1 = '/opt/gurobi*'; d2 = '/opt/'; d3 = 'linx64';
+        case 'mexglx',    d1 = '/opt/gurobi*'; d2 = '/opt/'; d3 = 'linux32';
+        case 'mexw32',    d1 = 'C:\gurobi*'; d2 = 'C:\'; d3 = 'win32';
+        case 'mexw64';    d1 = 'C:\gurobi*'; d2 = 'C:\'; d3 = 'win64';
+        otherwise,        d1 = [];
     end
-    if ~found && fs(1) == '/' && exist( '/usr/local/bin/gurobi_cl', 'file' ),
+    if ~isempty( d1 ),
+        dd = dir( d1 );
+        dd = { dd([dd.isdir]).name };
+        dd = strcat( strcat( d2, dd ), [ fs, d3, fs, 'matlab', fs, fname ] );
+        fpaths = [ fpaths ; dd(:) ];
+    end
+    gurobi_dir = getenv( 'GUROBI_HOME' );
+    if ~isempty( gurobi_dir ),
+        fpaths{end+1} = [ gurobi_dir, fs, 'matlab', fs, fname ];
+    end
+    if exist( '/usr/local/bin/gurobi_cl', 'file' ),
         [ status, mpath ] = unix('ls -l /usr/local/bin/gurobi_cl'); %#ok
-        temp = strfind( mpath, ' -> ' );
-        if ~isempty( temp ),
-            mpath = mpath(temp(end)+4:end-1);
-            if exist( mpath, 'file' ),
-                temp = strfind( mpath, fs );
-                if length( temp ) > 2,
-                    mpath = [ mpath(1:temp(end-1)), 'matlab' ];
-                    if exist( [ mpath, fs, mexname ], 'file' ),
-                        shim.path = [ mpath, ps ];
-                        found = true;
-                    end
+        mpath = regexprep( mpath, '^.*-> ', '' );
+        if ~isempty( mpath ),
+            mpath = regexprep( mpath, '^/+', '/' );
+            mpath = regexprep( mpath, '/[^/]+/[^/]+$', '' );
+            mpath = [ mpath, fs, 'matlab', fs, fname ];
+            fpaths{end+1} = mpath;
+        end
+    end
+    old_dir = pwd;
+    oshim = shim;
+    shim = [];
+    prob = struct( 'Obj', 1, 'A', sparse(1,1,1), 'Sense', '>', 'RHS', 0 );
+    params = struct( 'OutputFlag', false );
+    for k = 1 : length(fpaths),
+        fpath = fpaths{k};
+        if ~exist( fpath, 'file' ) || any( strcmpi( fpath, fpaths(1:k-1) ) ),
+            continue
+        end
+        new_dir = fpath(1:end-flen-1);
+        cd( new_dir );
+        tshim = oshim;
+        tshim.fullpath = fpath;
+        tshim.version = 'unknown';
+        is_internal = strncmp( new_dir, int_path, int_plen );
+        if is_internal,
+            mfunc = @gurobi;
+            tshim.location = [ '{cvx}', new_dir(int_plen+1:end-length(mext)+2) ];
+        else
+            mfunc = @gurobi;
+            tt = strfind( new_dir, fs );
+            tshim.location = new_dir(1:tt(end-1)-1);
+        end
+        res = [];
+        try
+            res = mfunc( prob, params );
+        catch errmsg
+            tshim.error = check_gurobi_error( errmsg );
+        end
+        if isfield( res, 'versioninfo' ),
+            version = res.versioninfo.major * 100 + 10 * res.versioninfo.minor + res.versioninfo.technical;
+            tshim.version = sprintf( '%.2f', version / 100 );
+        else
+            version = 0;
+        end
+        if isempty( tshim.error )
+            if version < 500,
+                tshim.error = 'CVX requires Gurobi 5.0 or later.';
+            else
+                switch res.versioninfo.license,
+                    case 1,
+                        tshim.warning = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
+                    case 5,
+                        if aca_only,
+                            tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a CVX Professional license is required for any non-academic use.' );
+                        end
+                    otherwise,
+                        if aca_only,
+                            tshim.error = ferror;
+                        end
                 end
             end
         end
+        if isempty( tshim.error ),
+            tshim.check = @check;
+            tshim.solve = @(varargin)solve(mfunc,varargin{:});
+            if k ~= 2,
+                tshim.path = [ new_dir, ps ];
+            end
+        end
+        shim = [ shim, tshim ]; %#ok
     end
-    if ~found,
-        shim.error = 'Could not find a Gurobi MEX file.';
+    cd( old_dir );
+    if isempty( shim ),
+        shim = oshim;
+        shim.error = 'Could not find a MOSEK MEX file.';
     end
-end
-if aca_only || isempty( shim.error ),
-    [ shim.error, shim.warning ] = install_check( shim );
-end
-if isempty( shim.error ),
-    shim.check = @check;
-    shim.solve = @solve;
 else
     shim.check = [];
     shim.solve = [];
+    if ~isfield( shim, 'fullpath' ) || isempty( shim.fullpath ),
+        if isempty( shim.path ),
+            shim.path = which( fname );
+            if isempty( shim.path ),
+                shim.error = 'The Gurobi MEX file is missing from the MATLAB path. Please re-run CVX_SETUP.';
+            end
+        else
+            shim.fullpath = [ shim(k).path(1:end-1), fname ];
+        end
+    elseif isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
+        if isempty( shim.path ),
+            temp = strfind( shim.fullpath, fs );
+            shim.path = [ shim.fullpath(1:temp(end)), ps ];
+        else
+            shim.path = '';
+        end
+    end
+    if strncmp( shim.fullpath, int_path, int_plen ),
+        if ~try_internal,
+            shim.error = 'This license does not include the internal Gurobi solver.';
+        end
+        mfunc = @gurobi;
+    else
+        mfunc = @gurobi;
+    end
+    if isempty( shim.error ),
+        shim.check = @check;
+        shim.solve = @(varargin)solve(mfunc,varargin{:});
+    end
 end
 
 % CVX_GUROBI_ERROR
@@ -92,45 +201,6 @@ end
 % possible. It might be a licensing error, or it might be an installation
 % error. This routine analyzes the structure of the error message and 
 % provides a formatted string to display to the user.
-
-function [ error_msg, warning_msg ] = install_check( shim )
-% Test the installation with a small sample problem
-global cvx___ %#ok
-prob = struct( 'Obj', 1, 'A', sparse(1,1,1), 'Sense', '>', 'RHS', 0 );
-params = struct( 'OutputFlag', false );
-error_msg = '';
-warning_msg = '';
-if ~isempty( shim.path ), 
-    cur_d = pwd; 
-    cd( shim.path(1:end-1) ); 
-end
-myext = builtin( 'mexext' );
-if isempty( regexp( which( 'gurobi' ), [ myext, '$' ] ) ), %#ok
-    error_msg = sprintf( 'The original MEX file gurobi.%s cannot be run. Please reinstall Gurobi and re-run cvx_setup. If the situation persists, please contact CVX Research support.', myext );
-else
-    try
-        res = gurobi( prob, params );
-    catch errmsg
-        error_msg = check_gurobi_error( errmsg );
-    end
-end
-if ~isempty( shim.path ), 
-    cd( cur_d );
-end
-if isempty( error_msg )
-    if ~isfield( res, 'versioninfo' ) || res.versioninfo.major < 5,
-        error_msg = 'CVX requires Gurobi 5.0 or later.';
-    else
-        switch res.versioninfo.license,
-            case 1,
-                warning_msg = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
-            case 5,
-                warning_msg = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a CVX Professional license is required for any non-academic use.' );
-            otherwise,
-                error_msg = shim.error;
-        end
-    end
-end
 
 function error_msg = check_gurobi_error( error_msg )
 errtxt = cvx_error( error_msg, 67, false, '    '  );
@@ -167,7 +237,7 @@ end
 % This routine accepts the problem to solve in internal CVX form and
 % performs the conversions necessary for Gurobi to solve it.
 
-function [ x, status, tol, iters, y, z ] = solve( At, b, c, nonls, quiet, prec, settings )
+function [ x, status, tol, iters, y, z ] = solve( mfunc, At, b, c, nonls, quiet, prec, settings )
 need_duals = nargout > 4;
 
 n = numel(c);
@@ -259,7 +329,7 @@ params.BarQCPConvTol = prec(2);
 params.FeasibilityTol = max([1e-9,prec(2)]);
 params.OptimalityTol = max([1e-9,prec(2)]);
 try
-    res = cvx_run_solver( @gurobi, prob, params, 'res', settings, 2 );
+    res = cvx_run_solver( mfunc, prob, params, 'res', settings, 2 );
 catch errmsg
     error( 'CVX:SolverError', check_gurobi_error( errmsg ) );
 end

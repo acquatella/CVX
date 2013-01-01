@@ -1,141 +1,186 @@
 function shim = cvx_mosek( shim )
 
 global cvx___
+persistent ferror try_internal
 if ~isempty( shim.solve ),
     return
 end
-if ~usejava('jvm'),
-    shim.error = 'Java support is required.';
-elseif isempty( cvx___.license ),
-    shim.error = 'A CVX Professional license is required.';
-else
-    shim.error = 'An error occurred verifying the CVX Professional license.';
-    try
-        cvx___.license = full_verify( cvx___.license );
-        if cvx___.license.days_left >= 0, 
-            switch cvx___.license.license_type,
-            case { 'academic', 'trial' },
-                try_internal = true;
-            case 'special',
-                try_internal = ~any( strfind( cvx___.license.email, 'gurobi' ) );
-            otherwise,
-                try_internal = any( strfind( cvx___.license.license_type, '+mosek' ) );
+if ~ischar( ferror ),
+    if ~usejava('jvm'),
+        ferror = 'Java support is required.';
+    elseif isempty( cvx___.license ),
+        ferror = 'A CVX Professional license is required.';
+    else
+        ferror = 'An error occurred verifying the CVX Professional license.';
+        try
+            cvx___.license = full_verify( cvx___.license );
+            if cvx___.license.days_left >= 0, 
+                switch cvx___.license.license_type,
+                case { 'academic', 'trial' },
+                    try_internal = true;
+                case 'special',
+                    try_internal = ~any( strfind( cvx___.license.email, 'gurobi' ) );
+                    otherwise,
+                    try_internal = any( strfind( cvx___.license.license_type, '+mosek' ) );
+                end
+                ferror = '';
             end
-            shim.error = ''; 
+        catch exc
+            ferror = my_get_report( exc );
         end
-    catch exc
-        shim.error = my_get_report( exc );
     end
 end
-if ~isempty( shim.error ),
+if ~isempty( ferror ),
+    shim.error = ferror;
+    if isempty( shim.name ),
+        shim.name = 'Mosek';
+    end
     return
 end
-if isempty( shim.name ) || ~isfield( shim, 'parmams' ) || isempty( shim.params ),
-    if strncmp( computer, 'PC', 2 ), fs = '\'; else fs = '/'; end
+[ fs, ps, int_path, mext ] = cvx_version;
+fname = [ 'mosekopt.', mext ];
+int_plen = length( int_path );
+if isempty( shim.name ),
     shim.name = 'Mosek';
     shim.dualize = true;
-    shim.params = struct( 'internal', try_internal, 'mfunc', [], 'sdp', false );
-    mext = mexext;
-    fpath = [];
-    fname = [ 'mosekopt.', mext ];
-    int_path = strfind( shim.spath, fs );
-    int_path = shim.spath(1:int_path(end-1));
-    if try_internal,
-        temp = [ int_path, 'mosek', fs, mext(4:end), fs, fname ];
-        if exist( temp, 'file' ),
-            fpath = temp;
-            need_path = true;
-        end
+    shim.check = [];
+    shim.solve = [];
+    flen = length(fname);
+    fpaths = { [ int_path, fs, 'mosek', fs, mext(4:end), fs, fname ] };
+    fpaths = [ fpaths ; which( fname, '-all' ) ];
+    mosek_dir = getenv( 'MOSEKLM_LICENSE_FILE' );
+    k = strfind( mosek_dir, fs );
+    if length( k ) > 1,
+        fpaths{end+1} = [ mosek_dir(1:k(end-1)), 'toolbox', fs, 'r2009b', fs, fname ];
     end
-    if isempty( fpath ),
-        shim.params.internal = false;
-        temp = which( fname, '-all' );
-        if ~isempty( temp ),
-            tndx = min(find(~strncmpi( temp, int_path, length(int_path) ) )); %#ok
-            if ~isempty( tndx ),
-                fpath = temp{tndx};
-                need_path = tndx > 1;
-            end
+    old_dir = pwd;
+    oshim = shim;
+    shim = [];
+    for k = 1 : length(fpaths),
+        fpath = fpaths{k};
+        if ~exist( fpath, 'file' ) || any( strcmp( fpath, fpaths(1:k-1) ) ),
+            continue
         end
-    end
-    if isempty( fpath ),
-        mosek_dir = getenv( 'MOSEKLM_LICENSE_FILE' );
-        k = strfind( mosek_dir, fs );
-        if length( k ) > 1,
-            mex_dir = [ mosek_dir(1:k(end-1)), 'toolbox', fs, 'r2009b' ];
-            mex_file = [ mex_dir, fs, 'mosekopt.', mexext ];
-            if exist( mex_file, 'file' ),
-                fpath = mex_file;
-                need_path = true;
-            end
-        end
-    end
-    if isempty( fpath ),
-        shim.error = 'Could not find a MOSEK MEX file.';
-    else
-        if need_path,
-            old_dir = pwd;
-            temp = strfind( fpath, fs );
-            new_dir = fpath(1:temp(end)-1);
-            cd( new_dir );
-        end
-        if shim.params.internal,
-            mfunc = @m7;
+        new_dir = fpath(1:end-flen-1);
+        cd( new_dir );
+        tshim = oshim;
+        tshim.fullpath = fpath;
+        tshim.version = 'unknown';
+        is_internal = strncmp( new_dir, int_path, int_plen );
+        if is_internal,
+            tshim.location = [ '{cvx}', new_dir(int_plen+1:end-length(mext)+2) ];
         else
-            mfunc = @mosekopt;
+            tt = strfind( new_dir, fs );
+            tshim.location = new_dir(1:tt(end-1)-1);
         end
         try
-            [rr,res] = mfunc('minimize echo(0) param',struct('c',1,'a',sparse(1,1,1),'blc',0)); %#ok
-            if res.rcode ~= 0,
-                shim.error = sprintf( 'error %s\n    %s', res.rcodestr, res.rmsg );
-            elseif isfield( res, 'param' ) && isfield( res.param, 'MSK_IPAR_WRITE_IGNORE_INCOMPATIBLE_PSD_ITEMS' ),
-                shim.params.sdp = true;
-            end
-        catch %#ok
-            errmsg = lasterror; %#ok
-            shim.error = sprintf( 'unexpected MEX file failure:\n%s\n', errmsg.message );
+            otp = evalc('mosekopt');
+        catch errmsg
+            tshim.error = sprintf( 'Unexpected MEX file failure:\n%s\n', errmsg.message );
         end
-        if need_path,
-            cd( old_dir );
-            if strncmp( computer, 'PC', 2 ),
-                shim.path = [ new_dir, ';' ];
+        if isempty( tshim.error ),
+            otp = regexp( otp, 'MOSEK Version \S+', 'match' );
+            if ~isempty(otp),
+                tshim.version = otp{1}(15:end);
+                sdp = sum(sscanf(tshim.version,'%d')) >= 7;
             else
-                shim.path = [ new_dir, ':' ];
+                sdp = false;
             end
+            if is_internal,
+                mfunc = @m7;
+            elseif ~strcmp( cvx___.license.email, 'mcg@cvxr.com' ),
+                mfunc = @mosekopt;
+            elseif sdp,
+                mfunc = @m7;
+            else
+                mfunc = @m6;
+            end
+            try
+                [rr,res] = mfunc('minimize echo(0)',struct('c',1,'a',sparse(1,1,1),'blc',0)); %#ok
+                if res.rcode ~= 0,
+                    tshim.error = sprintf( 'Error %s:\n%s\n', res.rcodestr, res.rmsg );
+                end
+            catch errmsg 
+                tshim.error = sprintf( 'Unexpected MEX file failure:\n%s\n', errmsg.message );
+            end
+        end
+        if isempty( tshim.error ),
+            tshim.check = @(varargin)check(sdp,varargin{:});
+            tshim.solve = @(varargin)solve(sdp,mfunc,varargin{:});
+            if k ~= 2,
+                tshim.path = [ new_dir, ps ];
+            end
+        end
+        shim = [ shim, tshim ]; %#ok
+    end
+    cd( old_dir );
+    if isempty( shim ),
+        shim = oshim;
+        shim.error = 'Could not find a MOSEK MEX file.';
+    end
+else
+    shim.check = [];
+    shim.solve = [];
+    if ~isfield( shim, 'fullpath' ) || isempty( shim.fullpath ),
+        if isempty( shim.path ),
+            shim.path = which( fname );
+            if isempty( shim.path ),
+                shim.error = 'The MOSEK MEX file is missing from the MATLAB path. Please re-run CVX_SETUP.';
+            end
+        else
+            shim.fullpath = [ shim(k).path(1:end-1), fname ];
+        end
+    elseif isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
+        if isempty( shim.path ),
+            temp = strfind( shim.fullpath, fs );
+            shim.path = [ shim.fullpath(1:temp(end)), ps ];
+        else
+            shim.path = '';
         end
     end
-elseif try_internal && shim.params.internal,
-    mfunc = @mosekopt2;
-else
-    mfunc = @mosekopt;
-end
-if isempty( shim.error ),
-    shim.check = @check;
-    shim.solve = @(At,b,c,nonls,quiet,prec,settings)solve(shim.params.sdp,mfunc,At,b,c,nonls,quiet,prec,settings);
+    if strncmp( shim.fullpath, int_path, int_plen ),
+        if ~try_internal,
+            shim.error = 'This license does not include the internal MOSEK solver.';
+        end
+        mfunc = @m7;
+        sdp = true;
+    elseif ~strcmp( cvx___.license.email, 'mcg@cvxr.com' ),
+        mfunc = @mosekopt;
+        sdp = any( strfind( shim.fullpath, '/7/' ) );
+    elseif any( strfind( shim.fullpath, '/6/' ) ),
+        mfunc = @m6;
+        sdp = false;
+    else
+        mfunc = @m7;
+        sdp = true;
+    end
+    if isempty( shim.error ),
+        shim.check = @(varargin)check(sdp,varargin{:});
+        shim.solve = @(varargin)solve(sdp,mfunc,varargin{:});
+    end
 end
 
-function found_bad = check( nonls )
-found_bad = false;
-for k = 1 : length( nonls ),
-if any( strcmp( nonls(k).type, { 'semidefinite', 'hermitian-semidefinite' } ) ) && size(nonls(k).indices,1) > 4,
-    warning( 'CVX:Mosek:Semidefinite', 'This nonlinearity requires use of semidefinite cones which Mosek does not support.\n%s', ...
-        'You will need to use a different solver for this model.' );
-    found_bad = true;
-end
-end
-
-function x = vec(x)
-x = x(:);
-
-function [ rr, res ] = m6( command, varargin ) %#ok
+function [ rr, res ] = m6( command, varargin )
 temp = [ 9, 4, 889, 3, 2013, 159, 82, 212, 183, 32, 156, 55, 5, 250, 40, 178, 78, 246, 213, 76, 76 ];
 [ rr, res ] = mosekopt( [ command, ' lic' ], varargin{:}, temp );
 
 function [ rr, res ] = m7( command, varargin )
 temp = [ 9, 4, 889, 3, 2013, 40, 74, 95, 36, 238, 110, 221, 213, 152, 251, 223, 3, 130, 183, 92, 60 ];
 [ rr, res ] = mosekopt( [ command, ' lic' ], varargin{:}, temp );
-function [ x, status, tol, iters, y, z ] = solve( can_sdp, mfunc, At, b, c, nonls, quiet, prec, settings )
 
+function found_bad = check( sdp, nonls )
+found_bad = false;
+if ~sdp,
+    for k = 1 : length( nonls ),
+        if any( strcmp( nonls(k).type, { 'semidefinite', 'hermitian-semidefinite' } ) ) && size(nonls(k).indices,1) > 4,
+            warning( 'CVX:Mosek:Semidefinite', 'This nonlinearity requires use of semidefinite cones which Mosek does not support.\n%s', ...
+                'You will need to use a different solver for this model.' );
+            found_bad = true;
+        end
+    end
+end
+
+function [ x, status, tol, iters, y, z ] = solve( sdp, mfunc, At, b, c, nonls, quiet, prec, settings )
 zp = zeros(0,1);
 [n,m] = size(At);
 b = b(:); c = c(:);
@@ -264,7 +309,7 @@ for k = 1 : length( nonls ),
     end    
     if need_sdp,
         
-        if ~can_sdp,
+        if ~sdp,
             error( 'CVX:SolverIncompatible', 'This version of MOSEK does not support semidefinite cones larger than 2x2.' );
         end
         
