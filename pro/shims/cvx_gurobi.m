@@ -110,7 +110,7 @@ if isempty( shim.name ),
         tshim.version = 'unknown';
         is_internal = strncmp( new_dir, int_path, int_plen );
         if is_internal,
-            mfunc = @gurobi;
+            mfunc = @gurobi5;
             tshim.location = [ '{cvx}', new_dir(int_plen+1:end-length(mext)+2) ];
         else
             mfunc = @gurobi;
@@ -185,7 +185,7 @@ else
         if ~try_internal,
             shim.error = 'This license does not include the internal Gurobi solver.';
         end
-        mfunc = @gurobi;
+        mfunc = @gurobi5;
     else
         mfunc = @gurobi;
     end
@@ -194,6 +194,12 @@ else
         shim.solve = @(varargin)solve(mfunc,varargin{:});
     end
 end
+
+function res = gurobi5( prob, params )
+params.isvname = 'CVX';
+params.appname = 'CVX';
+params.isv_key = '';
+res = gurobi( prob, params );
 
 % CVX_GUROBI_ERROR
 %
