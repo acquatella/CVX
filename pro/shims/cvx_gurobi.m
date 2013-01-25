@@ -17,50 +17,53 @@ function shim = cvx_gurobi( shim )
 % called with a saved copy of the shim, it restores those handles.
 
 global cvx___
-persistent ferror try_internal aca_only
 if ~isempty( shim.solve ),
     return
 end
-if ~ischar( ferror ),
-    aca_only = false;
-    if ~usejava('jvm'),
-        ferror = 'Java support is required.';
-    elseif isempty( cvx___.license ),
-        ferror = 'A CVX Professional license is required.';
-        aca_only = true;
-    else
-        ferror = 'An error occurred verifying the CVX Professional license.';
-        try
-            cvx___.license = full_verify( cvx___.license );
-            if cvx___.license.days_left >= 0, 
-                switch cvx___.license.license_type,
-                case { 'academic', 'trial' },
-                    try_internal = true;
-                case 'special',
-                    try_internal = ~any( strfind( cvx___.license.email, 'mosek' ) );
-                otherwise,
-                    try_internal = any( strfind( cvx___.license.license_type, '+gurobi' ) );
-                end
-                ferror = '';
+in_setup = isempty( shim.name );
+shim.name = 'Gurobi';
+shim.dualize = false;
+shim.check = [];
+shim.solve = [];
+aca_only = false;
+if ~usejava('jvm'),
+    ferror = 'Java support is required.';
+elseif isempty( cvx___.license ),
+    ferror = 'A CVX Professional license is required.';
+    aca_only = true;
+else
+    ferror = 'An error occurred verifying the CVX Professional license.';
+    try
+        cvx___.license = full_verify( cvx___.license );
+        if cvx___.license.days_left >= 0, 
+            switch cvx___.license.license_type,
+            case { 'academic', 'trial' },
+                try_internal = true;
+            otherwise,
+                try_internal = any( strfind( cvx___.license.license_type, '+gurobi' ) );
             end
-        catch exc
-            ferror = my_get_report( exc );
+            if try_internal,
+                hostid = cvx___.license.hostid;
+                if isempty( hostid ),
+                    try_internal = false;
+                elseif any( strcmp( hostid, '**' ) ),
+                    try_internal = any( cellfun( @(x)any(strcmp(x,hostid)), get_hostid ) );
+                end
+            end
+            ferror = '';
         end
+    catch exc
+        ferror = my_get_report( exc );
     end
 end
-if ~isempty( ferror ) && ~aca_only,
+if ~isempty( ferror ) && (~in_setup || ~aca_only),
     shim.error = ferror;
-    if isempty( shim.name ),
-        shim.name = 'Gurobi';
-    end
     return
 end
 [ fs, ps, int_path, mext ] = cvx_version;
 fname = [ 'gurobi.', mext ];
 int_plen = length( int_path );
-if isempty( shim.name ),
-    shim.name = 'Gurobi';
-    shim.dualize = false;
+if in_setup,
     flen = length(fname);
     fpaths = { [ int_path, fs, 'gurobi', fs, mext(4:end), fs, fname ] };
     fpaths = [ fpaths ; which( fname, '-all' ) ];
@@ -138,7 +141,7 @@ if isempty( shim.name ),
                         tshim.warning = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
                     case 5,
                         if aca_only,
-                            tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a CVX Professional license is required for any non-academic use.' );
+                            tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a paid CVX Professional license is required for any non-academic use.' );
                         end
                     otherwise,
                         if aca_only,
@@ -159,7 +162,7 @@ if isempty( shim.name ),
     cd( old_dir );
     if isempty( shim ),
         shim = oshim;
-        shim.error = 'Could not find a MOSEK MEX file.';
+        shim.error = 'Could not find a Gurobi MEX file.';
     end
 else
     shim.check = [];
@@ -447,7 +450,7 @@ try
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) )
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strcmp(lic.hostid,'*') ),
         lic.status = 'INVALID:HOSTID';
     elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';

@@ -1,50 +1,50 @@
 function shim = cvx_mosek( shim )
 
 global cvx___
-persistent ferror try_internal
 if ~isempty( shim.solve ),
     return
 end
-if ~ischar( ferror ),
-    if ~usejava('jvm'),
-        ferror = 'Java support is required.';
-    elseif isempty( cvx___.license ),
-        ferror = 'A CVX Professional license is required.';
-    else
-        ferror = 'An error occurred verifying the CVX Professional license.';
-        try
-            cvx___.license = full_verify( cvx___.license );
-            if cvx___.license.days_left >= 0, 
-                switch cvx___.license.license_type,
-                case { 'academic', 'trial' },
-                    try_internal = true;
-                case 'special',
-                    try_internal = ~any( strfind( cvx___.license.email, 'gurobi' ) );
-                    otherwise,
-                    try_internal = any( strfind( cvx___.license.license_type, '+mosek' ) );
-                end
-                ferror = '';
+in_setup = isempty( shim.name );
+shim.name = 'Mosek';
+shim.dualize = true;
+shim.check = [];
+shim.solve = [];
+if ~usejava('jvm'),
+    shim.error = 'Java support is required.';
+elseif isempty( cvx___.license ),
+    shim.error = 'A CVX Professional license is required.';
+else
+    shim.error = 'An error occurred verifying the CVX Professional license.';
+    try
+        cvx___.license = full_verify( cvx___.license );
+        if cvx___.license.days_left >= 0, 
+            switch cvx___.license.license_type,
+            case { 'academic', 'trial' },
+                try_internal = true;
+            otherwise,
+                try_internal = any( strfind( cvx___.license.license_type, '+mosek' ) );
             end
-        catch exc
-            ferror = my_get_report( exc );
+            if try_internal,
+                hostid = cvx___.license.hostid;
+                if isempty( hostid ),
+                    try_internal = false;
+                elseif any( strcmp( hostid, '**' ) ),
+                    try_internal = any( cellfun( @(x)any(strcmp(x,hostid)), get_hostid ) );
+                end
+            end
+            shim.error = '';
         end
+    catch exc
+        shim.error = my_get_report( exc );
     end
 end
-if ~isempty( ferror ),
-    shim.error = ferror;
-    if isempty( shim.name ),
-        shim.name = 'Mosek';
-    end
+if ~isempty( shim.error ),
     return
 end
 [ fs, ps, int_path, mext ] = cvx_version;
 fname = [ 'mosekopt.', mext ];
 int_plen = length( int_path );
-if isempty( shim.name ),
-    shim.name = 'Mosek';
-    shim.dualize = true;
-    shim.check = [];
-    shim.solve = [];
+if in_setup,
     flen = length(fname);
     fpaths = { [ int_path, fs, 'mosek', fs, mext(4:end), fs, fname ] };
     fpaths = [ fpaths ; which( fname, '-all' ) ];
@@ -556,7 +556,7 @@ try
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) )
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strcmp(lic.hostid,'*') ),
         lic.status = 'INVALID:HOSTID';
     elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';
