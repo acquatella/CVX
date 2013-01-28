@@ -77,6 +77,7 @@ if in_setup,
             otp = evalc('mosekopt');
         catch errmsg
             tshim.error = sprintf( 'Unexpected MEX file failure:\n%s\n', errmsg.message );
+            clear mosekopt
         end
         if isempty( tshim.error ),
             otp = regexp( otp, 'MOSEK Version \S+', 'match' );
@@ -87,7 +88,11 @@ if in_setup,
                 sdp = false;
             end
             if is_internal,
-                mfunc = @m7;
+                if ~try_internal,
+                    tshim.error = 'This license does not include the internal MOSEK solver.';
+                else
+                    mfunc = @m7;
+                end
             elseif ~strcmp( cvx___.license.email, 'mcg@cvxr.com' ),
                 mfunc = @mosekopt;
             elseif sdp,
@@ -95,6 +100,8 @@ if in_setup,
             else
                 mfunc = @m6;
             end
+        end
+        if isempty( tshim.error ),
             try
                 [rr,res] = mfunc('minimize echo(0)',struct('c',1,'a',sparse(1,1,1),'blc',0)); %#ok
                 if res.rcode ~= 0,
@@ -104,6 +111,7 @@ if in_setup,
                 tshim.error = sprintf( 'Unexpected MEX file failure:\n%s\n', errmsg.message );
             end
         end
+        clear mosekopt
         if isempty( tshim.error ),
             tshim.check = @(varargin)check(sdp,varargin{:});
             tshim.solve = @(varargin)solve(sdp,mfunc,varargin{:});

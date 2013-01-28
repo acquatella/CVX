@@ -132,6 +132,9 @@ if in_setup,
         else
             version = 0;
         end
+        if is_internal && ~try_internal,
+            tshim.error = 'This license does not include the internal Gurobi solver.';
+        end
         if isempty( tshim.error )
             if version < 500,
                 tshim.error = 'CVX requires Gurobi 5.0 or later.';
