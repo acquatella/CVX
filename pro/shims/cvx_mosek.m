@@ -41,7 +41,11 @@ end
 if ~isempty( shim.error ),
     return
 end
-[ fs, ps, int_path, mext ] = cvx_version;
+[ fs, ps, int_path, mext, nver, isoctave ] = cvx_version;
+if nver < 7.09 || isoctave,
+    shim.error = 'MOSEK requires MATLAB 7.9 (R2009b) or later.';
+    return
+end
 fname = [ 'mosekopt.', mext ];
 int_plen = length( int_path );
 if in_setup,
@@ -138,12 +142,23 @@ else
         else
             shim.fullpath = [ shim(k).path(1:end-1), fname ];
         end
-    elseif isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
-        if isempty( shim.path ),
-            temp = strfind( shim.fullpath, fs );
-            shim.path = [ shim.fullpath(1:temp(end)), ps ];
-        else
-            shim.path = '';
+    else
+        if ~strcmp( mext, shim.fullpath(end-length(mext)+1:end) ),
+            opath = regexp( shim.fullpath, 'mex\w+$', 'match' );
+            if ~isempty(opath),
+                opath = opath{1}(4:end);
+                npath = mext(4:end);
+                shim.path = strrep( shim.path, [fs,opath,ps], [fs,npath,ps] );
+                shim.fullpath = [ shim.path(1:end-1), fs, fname ];
+            end
+        end
+        if isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
+            if isempty( shim.path ),
+                temp = strfind( shim.fullpath, fs );
+                shim.path = [ shim.fullpath(1:temp(end)), ps ];
+            else
+                shim.path = '';
+            end
         end
     end
     if strncmp( shim.fullpath, int_path, int_plen ),
@@ -369,11 +384,13 @@ for k = 1 : length( nonls ),
         
     end
 end
+prob.a = At.';
 if ~isempty( xscale ),
     alpha = sqrt(2.0);
+    xscale = xscale ~= 0;
     xscale(end+1:n) = true;
     prob.c(xscale) = prob.c(xscale) * alpha;
-    At(xscale,:) = At(xscale,:) * alpha;
+    prob.a(:,xscale) = prob.a(:,xscale) * alpha;
 end
 if sdp_n,
     zndxs = 1 : n;
@@ -381,15 +398,13 @@ if sdp_n,
     qndxs = zeros(1,n);
     qndxs(zndxs) = 1 : numel(zndxs);
     prob.c = prob.c(zndxs);
-    prob.a = At(zndxs,:).';
+    prob.a = prob.a(:,zndxs);
     prob.blx = prob.blx(zndxs);
     prob.bux = prob.bux(zndxs);
     prob.ints.sub = qndxs(prob.ints.sub);
     for k = 1 : length( prob.cones ),
         prob.cones{k}.sub = qndxs(prob.cones{k}.sub);
     end
-else
-    prob.a = At.';
 end
 param.MSK_DPAR_INTPNT_CO_TOL_PFEAS = prec(1);
 param.MSK_DPAR_INTPNT_CO_TOL_DFEAS = prec(1);
@@ -446,69 +461,68 @@ switch sol.solsta,
     case { 'NEAR_DUAL_INFEASIBLE_CER', 'DUAL_INFEASIBLE_CER' },
         status = 'Unbounded';
         y(:) = NaN; z(:) = NaN; x = x / abs(c'*x);
-    case { 'OPTIMAL', 'NEAR_OPTIMAL' },
+    case { 'OPTIMAL', 'NEAR_OPTIMAL', 'INTEGER_OPTIMAL', 'NEAR_INTEGER_OPTIMAL' },
         status = 'Solved';
-        if sol.solsta(1) == 'N', tol = prec(3); end
-    case 'UNKNOWN',
-        if has_dual,
-            pobj = c' * x;
-            dobj = b' * y;
-            nrmc = norm( c );
-            nrmb = norm( b );
-            xc   = At' * x;
-            zc   = At * y + z;
-            if c' * x < 0,
-                uerr = -nrmc * norm(xc) / max( nrmb, 1 ) / pobj;
-            else
-                uerr = Inf;
-            end
-            if b' * y < 0,
-                ferr = -nrmb * norm(zc) / max( nrmc, 1 ) / dobj;
-            else
-                ferr = Inf;
-            end
-            perr = norm( xc - b ) /  ( 1 + nrmb );
-            derr = norm( zc - c ) / ( 1 + norm( c ) );
-            gerr = max( 0, pobj - dobj ) / max( 1, abs(pobj) );
-            tol2 = max( [ perr, derr, gerr ] );
-            tol  = min( [ tol2, ferr, uerr ] );
-            if tol == tol2,
-                status = 'Solved';
-            elseif tol == ferr,
-                status = 'Infeasible';
-                x(:) = NaN; z = z / abs(dobj); y = y / abs(dobj);
-            else
-                status = 'Unbounded';
-                y(:) = NaN; z(:) = NaN; x = x / abs(pobj);
-            end
-        else
-            status = 'Failed';
-            x(:) = NaN;
-        end
 end
 if isempty(status),
     switch sol.prosta,
-        case 'Failed',
-            status = 'Failed'; 
+        case { 'ILL_POSED', 'PRIMAL_FEASIBLE_OR_UNBOUNDED' },
+            tol = Inf;
             x(:) = NaN; y(:) = NaN; z(:) = NaN; 
-        case 'PRIMAL_INFEASIBLE',
+        case { 'PRIMAL_INFEASIBLE', 'NEAR_PRIMAL_INFEASIBLE' },
             status = 'Infeasible';
             x(:) = NaN; z = z / abs(b'*y); y = y / abs(b'*y);
-        case 'DUAL_INFEASIBLE',
+            sol.solsta = sol.prosta;
+        case { 'PRIMAL_AND_DUAL_INFEASIBLE' },
+            status = 'Infeasible';
+            x(:) = NaN; y(:) = NaN; z(:) = NaN; 
+            sol.solsta = sol.prosta;
+        case { 'DUAL_INFEASIBLE', 'NEAR_DUAL_INFEASIBLE' },
             status = 'Unbounded'; 
             y(:) = NaN; z(:) = NaN; x = x / abs(c'*x);
-        case 'PRIMAL_FEASIBLE',
-            status = 'Solved';
-        case 'PRIMAL_AND_DUAL_FEASIBLE',
-            status = 'Solved';
-
+            sol.solsta = sol.prosta;
         otherwise,
-            error( 'Unknown MOSEK status: %s', sol.prosta );
+            if has_dual,
+                pobj = c' * x;
+                dobj = b' * y;
+                nrmc = norm( c );
+                nrmb = norm( b );
+                xc   = At' * x;
+                zc   = At * y + z;
+                if c' * x < 0,
+                    uerr = -nrmc * norm(xc) / max( nrmb, 1 ) / pobj;
+                else
+                    uerr = Inf;
+                end
+                if b' * y < 0,
+                    ferr = -nrmb * norm(zc) / max( nrmc, 1 ) / dobj;
+                else
+                    ferr = Inf;
+                end
+                perr = norm( xc - b ) /  ( 1 + nrmb );
+                derr = norm( zc - c ) / ( 1 + norm( c ) );
+                gerr = max( 0, pobj - dobj ) / max( 1, abs(pobj) );
+                tol2 = max( [ perr, derr, gerr ] );
+                tol  = min( [ tol2, ferr, uerr ] );
+                if tol == tol2,
+                    status = 'Solved';
+                elseif tol == ferr,
+                    status = 'Infeasible';
+                    x(:) = NaN; z = z / abs(dobj); y = y / abs(dobj);
+                else
+                    status = 'Unbounded';
+                    y(:) = NaN; z(:) = NaN; x = x / abs(pobj);
+                end
+            else
+                warning( 'CVX:UnknownMosekStatus', 'Unknown MOSEK status: %s/%s', sol.prosta, sol.solsta );
+                x(:) = NaN; y(:) = NaN; z(:) = NaN; 
+                tol = Inf;
+            end
     end
 end
 if tol > prec(3),
     status = 'Failed';
-elseif sol.solsta(1) == 'N',
+elseif strncmp( sol.solsta, 'NEAR_', 5 ),
     tol = prec(3);
     status = [ 'Inaccurate/', status ];
 elseif tol > prec(2),

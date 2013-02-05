@@ -179,12 +179,23 @@ else
         else
             shim.fullpath = [ shim(k).path(1:end-1), fname ];
         end
-    elseif isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
-        if isempty( shim.path ),
-            temp = strfind( shim.fullpath, fs );
-            shim.path = [ shim.fullpath(1:temp(end)), ps ];
-        else
-            shim.path = '';
+    else
+        if ~strcmp( mext, shim.fullpath(end-length(mext)+1:end) ),
+            opath = regexp( shim.fullpath, 'mex\w+$', 'match' );
+            if ~isempty(opath),
+                opath = opath{1}(4:end);
+                npath = mext(4:end);
+                shim.path = strrep( shim.path, [fs,opath,ps], [fs,npath,ps] );
+                shim.fullpath = [ shim.path(1:end-1), fs, fname ];
+            end
+        end
+        if isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
+            if isempty( shim.path ),
+                temp = strfind( shim.fullpath, fs );
+                shim.path = [ shim.fullpath(1:temp(end)), ps ];
+            else
+                shim.path = '';
+            end
         end
     end
     if strncmp( shim.fullpath, int_path, int_plen ),

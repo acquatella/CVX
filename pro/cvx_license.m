@@ -255,6 +255,8 @@ end
 if ~isempty( lic.username ),
     if any( strcmpi( get_username, lic.username ) ),
         status = '';
+    elseif any( strncmp( lic.username, '*', 1 ) ), 
+        status = ' (unlocked username)';
     else
         status = ' (MISMATCH)';
     end
@@ -278,10 +280,10 @@ if ~isempty( lic.hostid ),
             status = sprintf( '%s,', hostid_name{ndxs} );
             status = sprintf( ' (%s)', status(1:end-1) );
         end
+    elseif any( strncmp( lic.hostid, '*', 1 ) ),
+        status = ' (unlocked host id)';
     elseif isempty( hostid_addr ),
         status = ' (MISMATCH: no host id)';
-    elseif any( strcmp( lic.hostid, '*' ) ),
-        status = ' (unlocked host id)';
     else
         status = ' (MISMATCH)';
     end
@@ -437,7 +439,7 @@ try
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '**', 1 ) ),
+    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
         lic.status = 'INVALID:HOSTID';
     elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';
