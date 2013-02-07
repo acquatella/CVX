@@ -118,14 +118,15 @@ if in_setup,
             if fs == '\', fsre = '\\'; else fsre = fs; end
             lfile = regexprep( prefdir, [ fsre, 'R\d\d\d\d\w$' ], [ fs, 'cvx_gurobi.lic' ] );
             if ~exist( lfile, 'file' ), lfile = []; end
-            tshim.params.license = lfile;
             mfunc = @(y,z)gurobi5(lfile,prob,params);
         else
             mfunc = @gurobi;
             tt = strfind( new_dir, fs );
             tshim.location = new_dir(1:tt(end-1)-1);
+            lfile = [];
         end
         res = [];
+        tshim.params.license = lfile;
         try
             res = mfunc( prob, params );
         catch errmsg
@@ -177,6 +178,7 @@ else
     shim.solve = [];
     try
         fpath = shim.fullpath;
+        lfile = shim.params.license;
     catch %#ok
         shim.error = 'The CVX/Gurobi interface has been updated. Please re-run CVX_SETUP.';
         return
@@ -199,7 +201,6 @@ else
     if ~strncmp( shim.fullpath, int_path, int_plen ),
         mfunc = @gurobi;
     elseif try_internal,
-        try lfile = shim.params.license; catch lfile = []; end
         mfunc = @(y,z)gurobi5(lfile,y,z);
     else
         shim.error = 'This license does not include the internal Gurobi solver.';

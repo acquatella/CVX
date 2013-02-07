@@ -83,6 +83,7 @@ if in_setup,
             tshim.error = sprintf( 'Unexpected MEX file failure:\n%s\n', errmsg.message );
             clear mosekopt
         end
+        tshim.params.sdp = false;
         if isempty( tshim.error ),
             otp = regexp( otp, 'MOSEK Version \S+', 'match' );
             if ~isempty(otp),
@@ -91,13 +92,14 @@ if in_setup,
             else
                 sdp = false;
             end
+            tshim.params.sdp = sdp;
             if is_internal,
                 if ~try_internal,
                     tshim.error = 'This license does not include the internal MOSEK solver.';
                 else
                     mfunc = @m7;
                 end
-            elseif ~strcmp( cvx___.license.email, 'mcg@cvxr.com' ),
+            elseif ~strncmp( cvx___.license.license_type, 'special', 7 ) || ~try_internal,
                 mfunc = @mosekopt;
             elseif sdp,
                 mfunc = @m7;
@@ -133,49 +135,39 @@ if in_setup,
 else
     shim.check = [];
     shim.solve = [];
-    if ~isfield( shim, 'fullpath' ) || isempty( shim.fullpath ),
-        if isempty( shim.path ),
-            shim.path = which( fname );
-            if isempty( shim.path ),
-                shim.error = 'The MOSEK MEX file is missing from the MATLAB path. Please re-run CVX_SETUP.';
-            end
-        else
-            shim.fullpath = [ shim(k).path(1:end-1), fname ];
+    try
+        fpath = shim.fullpath;
+        sdp = shim.params.sdp;
+    catch %#ok
+        shim.error = 'The CVX/MOSEK interface has been updated. Please re-run CVX_SETUP.';
+        return
+    end
+    if ~strcmp( mext, fpath(end-length(mext)+1:end) ),
+        opath = regexp( shim.fullpath, 'mex\w+$', 'match' );
+        if ~isempty(opath),
+            opath = opath{1}(4:end);
+            npath = mext(4:end);
+            shim.path = strrep( shim.path, [fs,opath,ps], [fs,npath,ps] );
+            shim.fullpath = [ strrep( shim.fullpath(1:end-length(opath)+1), [fs,opath,fs], [fs,npath,fs] ), npath ];
         end
-    else
-        if ~strcmp( mext, shim.fullpath(end-length(mext)+1:end) ),
-            opath = regexp( shim.fullpath, 'mex\w+$', 'match' );
-            if ~isempty(opath),
-                opath = opath{1}(4:end);
-                npath = mext(4:end);
-                shim.path = strrep( shim.path, [fs,opath,ps], [fs,npath,ps] );
-                shim.fullpath = [ shim.path(1:end-1), fs, fname ];
-            end
-        end
-        if isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
-            if isempty( shim.path ),
-                temp = strfind( shim.fullpath, fs );
-                shim.path = [ shim.fullpath(1:temp(end)), ps ];
-            else
-                shim.path = '';
-            end
-        end
+    end
+    if ~exist( fpath, 'file' ),
+        shim.error = 'The MOSEK MEX file has been moved. Please re-run CVX_SETUP.';
+        return
+    elseif isempty( shim.path ) && ~strcmp( shim.fullpath, which( fname ) ),
+        shim.error = 'A new MOSEK MEX file has been installed. Please re-run CVX_SETUP.';
     end
     if strncmp( shim.fullpath, int_path, int_plen ),
         if ~try_internal,
             shim.error = 'This license does not include the internal MOSEK solver.';
         end
         mfunc = @m7;
-        sdp = true;
-    elseif ~strcmp( cvx___.license.email, 'mcg@cvxr.com' ),
+    elseif ~strncmp( cvx___.license.license_type, 'special', 7 ) || ~try_internal,
         mfunc = @mosekopt;
-        sdp = any( strfind( shim.fullpath, '/7/' ) );
-    elseif any( strfind( shim.fullpath, '/6/' ) ),
-        mfunc = @m6;
-        sdp = false;
-    else
+    elseif sdp,
         mfunc = @m7;
-        sdp = true;
+    else
+        mfunc = @m6;
     end
     if isempty( shim.error ),
         shim.check = @(varargin)check(sdp,varargin{:});
