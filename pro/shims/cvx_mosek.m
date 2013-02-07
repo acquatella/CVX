@@ -4,11 +4,9 @@ global cvx___
 if ~isempty( shim.solve ),
     return
 end
-in_setup = isempty( shim.name );
-shim.name = 'Mosek';
-shim.dualize = true;
 shim.check = [];
 shim.solve = [];
+try_internal = false;
 if ~usejava('jvm'),
     shim.error = 'Java support is required.';
 elseif isempty( cvx___.license ),
@@ -33,22 +31,25 @@ else
                 end
             end
             shim.error = '';
+        elseif cvx___.license.days_left == -Inf,
+            shim.error = 'An error occurred verifying the CVX Professional license.';
+        else
+            shim.error = 'This CVX Professional license has expired.';
         end
     catch exc
         shim.error = my_get_report( exc );
     end
 end
 if ~isempty( shim.error ),
+    shim.name = 'Mosek';
     return
 end
-[ fs, ps, int_path, mext, nver, isoctave ] = cvx_version;
-if nver < 7.09 || isoctave,
-    shim.error = 'MOSEK requires MATLAB 7.9 (R2009b) or later.';
-    return
-end
+[ fs, ps, int_path, mext ] = cvx_version;
 fname = [ 'mosekopt.', mext ];
 int_plen = length( int_path );
-if in_setup,
+if isempty( shim.name ),
+    shim.name = 'Mosek';
+    shim.dualize = true;
     flen = length(fname);
     fpaths = { [ int_path, fs, 'mosek', fs, mext(4:end), fs, fname ] };
     fpaths = [ fpaths ; which( fname, '-all' ) ];
@@ -133,8 +134,6 @@ if in_setup,
         shim.error = 'Could not find a MOSEK MEX file.';
     end
 else
-    shim.check = [];
-    shim.solve = [];
     try
         fpath = shim.fullpath;
         sdp = shim.params.sdp;
@@ -157,13 +156,10 @@ else
     elseif isempty( shim.path ) && ~strcmp( shim.fullpath, which( fname ) ),
         shim.error = 'A new MOSEK MEX file has been installed. Please re-run CVX_SETUP.';
     end
-    if strncmp( shim.fullpath, int_path, int_plen ),
-        if ~try_internal,
-            shim.error = 'This license does not include the internal MOSEK solver.';
-        end
-        mfunc = @m7;
-    elseif ~strncmp( cvx___.license.license_type, 'special', 7 ) || ~try_internal,
+    if ~strncmp( shim.fullpath, int_path, int_plen )
         mfunc = @mosekopt;
+    elseif ~try_internal && ~strncmp( cvx___.license.license_type, 'special', 7 ),
+        shim.error = 'A CVX Professional license is required.';
     elseif sdp,
         mfunc = @m7;
     else
@@ -570,10 +566,13 @@ try
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
+        days_left = -Inf;
     elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strcmp(lic.hostid,'*') ),
         lic.status = 'INVALID:HOSTID';
+        days_left = -Inf;
     elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';
+        days_left = -Inf;
     elseif days_left < 0,
         lic.status = 'EXPIRED';
     else

@@ -20,19 +20,14 @@ global cvx___
 if ~isempty( shim.solve ),
     return
 end
-in_setup = isempty( shim.name );
-shim.name = 'Gurobi';
-shim.dualize = false;
 shim.check = [];
 shim.solve = [];
-aca_only = false;
+try_internal = false;
 if ~usejava('jvm'),
-    ferror = 'Java support is required.';
+    shim.error = 'Java support is required.';
 elseif isempty( cvx___.license ),
-    ferror = 'A CVX Professional license is required.';
-    aca_only = true;
+    try_internal = true;
 else
-    ferror = 'An error occurred verifying the CVX Professional license.';
     try
         cvx___.license = full_verify( cvx___.license );
         if cvx___.license.days_left >= 0, 
@@ -50,20 +45,25 @@ else
                     try_internal = any( cellfun( @(x)any(strcmp(x,hostid)), get_hostid ) );
                 end
             end
-            ferror = '';
+        elseif cvx___.license.days_left == -Inf,
+            shim.error = 'An error occurred verifying the CVX Professional license.';
+        else
+            shim.error = 'This CVX Professional license has expired.';
         end
     catch exc
-        ferror = my_get_report( exc );
+        shim.error = my_get_report( exc );
     end
 end
-if ~isempty( ferror ) && (~in_setup || ~aca_only),
-    shim.error = ferror;
+if ~isempty( shim.error ),
+    shim.name = 'Gurobi';
     return
 end
 [ fs, ps, int_path, mext ] = cvx_version;
 fname = [ 'gurobi.', mext ];
 int_plen = length( int_path );
-if in_setup,
+if isempty( shim.name ),
+    shim.name = 'Gurobi';
+    shim.dualize = false;
     flen = length(fname);
     fpaths = { [ int_path, fs, 'gurobi', fs, mext(4:end), fs, fname ] };
     fpaths = [ fpaths ; which( fname, '-all' ) ];
@@ -118,46 +118,46 @@ if in_setup,
             if fs == '\', fsre = '\\'; else fsre = fs; end
             lfile = regexprep( prefdir, [ fsre, 'R\d\d\d\d\w$' ], [ fs, 'cvx_gurobi.lic' ] );
             if ~exist( lfile, 'file' ), lfile = []; end
-            mfunc = @(y,z)gurobi5(lfile,prob,params);
+            mfunc = @(y,z)gurobi5(lfile,y,z);
         else
             mfunc = @gurobi;
             tt = strfind( new_dir, fs );
             tshim.location = new_dir(1:tt(end-1)-1);
             lfile = [];
         end
-        res = [];
-        tshim.params.license = lfile;
         try
             res = mfunc( prob, params );
         catch errmsg
             tshim.error = check_gurobi_error( errmsg );
         end
-        if isfield( res, 'versioninfo' ),
+        try
             version = res.versioninfo.major * 100 + 10 * res.versioninfo.minor + res.versioninfo.technical;
             tshim.version = sprintf( '%.2f', version / 100 );
-        else
+        catch %#ok
             version = 0;
         end
-        if is_internal && ~try_internal,
-            tshim.error = 'This CVX Professional license does not include the internal Gurobi solver.';
+        try
+            ltype = res.versioninfo.license;
+        catch %#ok
+            ltype = 0;
         end
-        if isempty( tshim.error )
-            if version < 500,
-                tshim.error = 'CVX requires Gurobi 5.0 or later.';
-            else
-                switch res.versioninfo.license,
-                    case 1,
-                        tshim.warning = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
-                    case 5,
-                        if aca_only,
-                            tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a paid CVX Professional license is required for any non-academic use.' );
-                        end
-                    otherwise,
-                        if aca_only,
-                            tshim.error = ferror;
-                        end
+        tshim.params = struct( 'license', lfile, 'ltype', ltype );
+        if is_internal,
+            if isempty( cvx___.license ),
+                switch ltype,
+                case 1,
+                    tshim.warning = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
+                case 5,
+                    tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a paid CVX Professional license is required for any non-academic use.' );
+                otherwise,
+                    tshim.error = 'A CVX Professional license is required.';
                 end
+            elseif ~try_internal,
+                tshim.error = 'This CVX Professional license does not include the internal Gurobi solver.';
             end
+        end
+        if isempty( tshim.error ) && version < 500,
+            tshim.error = 'CVX requires Gurobi 5.0 or later.';
         end
         if isempty( tshim.error ),
             tshim.check = @check;
@@ -179,6 +179,7 @@ else
     try
         fpath = shim.fullpath;
         lfile = shim.params.license;
+        ltype = shim.params.ltype;
     catch %#ok
         shim.error = 'The CVX/Gurobi interface has been updated. Please re-run CVX_SETUP.';
         return
@@ -198,12 +199,12 @@ else
     elseif isempty( shim.path ) && ~strcmp( shim.fullpath, which( fname ) ),
         shim.error = 'A new Gurobi MEX file has been installed. Please re-run CVX_SETUP.';
     end
-    if ~strncmp( shim.fullpath, int_path, int_plen ),
+    if ~strncmp( shim.fullpath, int_path, int_plen )
         mfunc = @gurobi;
-    elseif try_internal,
-        mfunc = @(y,z)gurobi5(lfile,y,z);
+    elseif isempty( cvx___.license ) && ltype~= 1 && ltype ~= 5,
+        shim.error = 'A CVX Professional license is required.';
     else
-        shim.error = 'This license does not include the internal Gurobi solver.';
+        mfunc = @(y,z)gurobi5(lfile,y,z);
     end
     if isempty( shim.error ),
         shim.check = @check;
@@ -483,10 +484,13 @@ try
     dsa.update(unicode2native(message,'UTF-8'));
     if ~dsa.verify(int8(signature)),
         lic.status = 'INVALID:SIGNATURE';
+        days_left = -Inf;
     elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strcmp(lic.hostid,'*') ),
         lic.status = 'INVALID:HOSTID';
+        days_left = -Inf;
     elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
         lic.status = 'INVALID:USER';
+        days_left = -Inf;
     elseif days_left < 0,
         lic.status = 'EXPIRED';
     else
