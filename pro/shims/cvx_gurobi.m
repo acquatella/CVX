@@ -67,6 +67,7 @@ if in_setup,
     flen = length(fname);
     fpaths = { [ int_path, fs, 'gurobi', fs, mext(4:end), fs, fname ] };
     fpaths = [ fpaths ; which( fname, '-all' ) ];
+    no_native = length( fpaths ) == 1;
     switch mext,
         case 'mexmaci64', d1 = '/Library/gurobi*'; d2 = '/Library/'; d3 = 'mac64';
         case 'mexmaci',   d1 = '/Library/gurobi*'; d2 = '/Library/'; d3 = 'mac32';
@@ -113,8 +114,12 @@ if in_setup,
         tshim.version = 'unknown';
         is_internal = strncmp( new_dir, int_path, int_plen );
         if is_internal,
-            mfunc = @gurobi5;
             tshim.location = [ '{cvx}', new_dir(int_plen+1:end-length(mext)+2) ];
+            if fs == '\', fsre = '\\'; else fsre = fs; end
+            lfile = regexprep( prefdir, [ fsre, 'R\d\d\d\d\w$' ], [ fs, 'cvx_gurobi.lic' ] );
+            if ~exist( lfile, 'file' ), lfile = []; end
+            tshim.params.license = lfile;
+            mfunc = @(y,z)gurobi5(lfile,prob,params);
         else
             mfunc = @gurobi;
             tt = strfind( new_dir, fs );
@@ -133,7 +138,7 @@ if in_setup,
             version = 0;
         end
         if is_internal && ~try_internal,
-            tshim.error = 'This license does not include the internal Gurobi solver.';
+            tshim.error = 'This CVX Professional license does not include the internal Gurobi solver.';
         end
         if isempty( tshim.error )
             if version < 500,
@@ -156,7 +161,7 @@ if in_setup,
         if isempty( tshim.error ),
             tshim.check = @check;
             tshim.solve = @(varargin)solve(mfunc,varargin{:});
-            if k ~= 2,
+            if no_native || k ~= 2,
                 tshim.path = [ new_dir, ps ];
             end
         end
@@ -170,41 +175,34 @@ if in_setup,
 else
     shim.check = [];
     shim.solve = [];
-    if ~isfield( shim, 'fullpath' ) || isempty( shim.fullpath ),
-        if isempty( shim.path ),
-            shim.path = which( fname );
-            if isempty( shim.path ),
-                shim.error = 'The Gurobi MEX file is missing from the MATLAB path. Please re-run CVX_SETUP.';
-            end
-        else
-            shim.fullpath = [ shim(k).path(1:end-1), fname ];
-        end
-    else
-        if ~strcmp( mext, shim.fullpath(end-length(mext)+1:end) ),
-            opath = regexp( shim.fullpath, 'mex\w+$', 'match' );
-            if ~isempty(opath),
-                opath = opath{1}(4:end);
-                npath = mext(4:end);
-                shim.path = strrep( shim.path, [fs,opath,ps], [fs,npath,ps] );
-                shim.fullpath = [ shim.path(1:end-1), fs, fname ];
-            end
-        end
-        if isempty( shim.path ) ~= strcmp( shim.fullpath, which( fname ) ),
-            if isempty( shim.path ),
-                temp = strfind( shim.fullpath, fs );
-                shim.path = [ shim.fullpath(1:temp(end)), ps ];
-            else
-                shim.path = '';
-            end
+    try
+        fpath = shim.fullpath;
+    catch %#ok
+        shim.error = 'The CVX/Gurobi interface has been updated. Please re-run CVX_SETUP.';
+        return
+    end
+    if ~strcmp( mext, fpath(end-length(mext)+1:end) ),
+        opath = regexp( shim.fullpath, 'mex\w+$', 'match' );
+        if ~isempty(opath),
+            opath = opath{1}(4:end);
+            npath = mext(4:end);
+            shim.path = strrep( shim.path, [fs,opath,ps], [fs,npath,ps] );
+            shim.fullpath = [ strrep( shim.fullpath(1:end-length(opath)+1), [fs,opath,fs], [fs,npath,fs] ), npath ];
         end
     end
-    if strncmp( shim.fullpath, int_path, int_plen ),
-        if ~try_internal,
-            shim.error = 'This license does not include the internal Gurobi solver.';
-        end
-        mfunc = @gurobi5;
-    else
+    if ~exist( fpath, 'file' ),
+        shim.error = 'The Gurobi MEX file has been moved. Please re-run CVX_SETUP.';
+        return
+    elseif isempty( shim.path ) && ~strcmp( shim.fullpath, which( fname ) ),
+        shim.error = 'A new Gurobi MEX file has been installed. Please re-run CVX_SETUP.';
+    end
+    if ~strncmp( shim.fullpath, int_path, int_plen ),
         mfunc = @gurobi;
+    elseif try_internal,
+        try lfile = shim.params.license; catch lfile = []; end
+        mfunc = @(y,z)gurobi5(lfile,y,z);
+    else
+        shim.error = 'This license does not include the internal Gurobi solver.';
     end
     if isempty( shim.error ),
         shim.check = @check;
@@ -212,11 +210,25 @@ else
     end
 end
 
-function res = gurobi5( prob, params )
+function res = gurobi5( lfile, prob, params )
+if ~isempty(lfile),
+    oenv = getenv('GRB_LICENSE_FILE');
+    setenv('GRB_LICENSE_FILE',lfile);
+end
 params.isvname = 'CVX';
 params.appname = 'CVX';
 params.isv_key = '';
-res = gurobi( prob, params );
+exc = [];
+try
+    res = gurobi( prob, params );
+catch exc
+end
+if ~isempty(lfile),
+    setenv('GRB_LICENSE_FILE',oenv);
+end
+if ~isempty(exc)
+    rethrow(exc);
+end
 
 % CVX_GUROBI_ERROR
 %
@@ -276,6 +288,7 @@ prob.Cones = struct( 'Index', {} );
 prob.vtype = 'C';
 prob.vtype = prob.vtype(1,ones(1,n));
 xscale = zeros(2,0);
+any_int = false; %#ok
 for k = 1 : length( nonls ),
     nonl = nonls(k);
     tt = nonl.type;
@@ -284,14 +297,18 @@ for k = 1 : length( nonls ),
     switch tt,
         case 'i_integer',
             prob.vtype( ti ) = 'I';
+            any_int = true;
         case 'i_binary',
             prob.vtype( ti ) = 'B';
             prob.LB( ti ) = 0;
             prob.UB( ti ) = 1;
+            any_int = true;
         case 'i_semicontinuous',
             prob.vtype( ti ) = 'S';
+            any_int = true;
         case 'i_semiinteger',
             prob.vtype( ti ) = 'N';
+            any_int = true;
         case 'nonnegative',
             prob.LB( ti ) = 0;
         case 'lorentz',
@@ -344,13 +361,14 @@ if ~isempty( xscale ),
     prob.Obj(xscale) = tmat*prob.Obj(xscale);
     prob.A(:,xscale) = prob.A(:,xscale)*tmat;
 end
+prec(1) = prec(2);
 params.OutputFlag = double(~quiet);
 params.InfUnbdInfo = 1;
 params.QCPDual = +need_duals;
-params.BarConvTol = prec(2);
-params.BarQCPConvTol = prec(2);
-params.FeasibilityTol = max([1e-9,prec(2)]);
-params.OptimalityTol = max([1e-9,prec(2)]);
+params.BarConvTol = prec(1);
+params.BarQCPConvTol = prec(1);
+params.FeasibilityTol = max([1e-9,prec(1)]);
+params.OptimalityTol = max([1e-9,prec(1)]);
 try
     res = cvx_run_solver( mfunc, prob, params, 'res', settings, 2 );
 catch errmsg
@@ -383,16 +401,16 @@ switch res.status,
         else
             tol = Inf;
         end
-        if tol < Inf && need_duals,
-            if ~isfield( res, 'pi' ),
-                tol = Inf;
-            else
+        if need_duals,
+            if isfield( res, 'pi' ),
                 y = res.pi;
                 z = prob.Obj - prob.A' * y;
+            else
+                tol = Inf;
             end
         end
-        if status(1) == 'S' && tol < Inf && prec(1) == prec(2),
-            tol = prec(3); 
+        if res.status(1) == 'S',
+            status = 'Inaccurate/Solved';
         end
     otherwise,
         tol = Inf;
