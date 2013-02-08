@@ -63,14 +63,10 @@ if isempty( shim.name ),
     shim = [];
     for k = 1 : length(fpaths),
         fpath = fpaths{k};
-        if ~exist( fpath, 'file' ) || any( strcmp( fpath, fpaths(1:k-1) ) ),
-            continue
-        end
-        new_dir = fpath(1:end-flen-1);
-        cd( new_dir );
         tshim = oshim;
         tshim.fullpath = fpath;
         tshim.version = 'unknown';
+        new_dir = fpath(1:end-flen-1);
         is_internal = strncmp( new_dir, int_path, int_plen );
         if is_internal,
             tshim.location = [ '{cvx}', new_dir(int_plen+1:end-length(mext)+2) ];
@@ -78,6 +74,25 @@ if isempty( shim.name ),
             tt = strfind( new_dir, fs );
             tshim.location = new_dir(1:tt(end-1)-1);
         end
+        if ~exist( fpath, 'file' ),
+            if exist( strrep( fpath, mext(4:end), 'a64' ), 'file' ),
+                switch mext,
+                    case 'mexmaci', pform = '32-bit OSX';
+                    case 'glx',     pform = '32-bit Linux';
+                    case 'w32',     pform = '32-bit Windows';
+                    otherwise,      pform = [ 'the "', mext, '" platform' ];
+                end
+                tshim.error = sprintf( 'This version of MOSEK does not support %s.', pform );
+                if pform(1) ~= '"',
+                    tshim.error = [ tshim.error, ' If possible, please switch to the 64-bit version of MATLAB.' ];
+                end
+                shim = [ shim, tshim ]; %#ok
+            end
+            continue
+        elseif any( strcmp( fpath, fpaths(1:k-1) ) ),
+            continue
+        end
+        cd( new_dir );
         try
             otp = evalc('mosekopt');
         catch errmsg
@@ -183,7 +198,7 @@ function found_bad = check( sdp, nonls )
 found_bad = false;
 if ~sdp,
     for k = 1 : length( nonls ),
-        if any( strcmp( nonls(k).type, { 'semidefinite', 'hermitian-semidefinite' } ) ) && size(nonls(k).indices,1) > 4,
+        if any( strcmp( nonls(k).type, { 'semidefinite', 'hermitian-semidefinite' } ) ) && size(nonls(k).indices,1) > 4
             warning( 'CVX:Mosek:Semidefinite', 'This nonlinearity requires use of semidefinite cones which Mosek does not support.\n%s', ...
                 'You will need to use a different solver for this model.' );
             found_bad = true;
@@ -403,7 +418,7 @@ param.MSK_DPAR_INTPNT_TOL_PFEAS = prec(1);
 param.MSK_DPAR_INTPNT_TOL_DFEAS = prec(1);
 param.MSK_DPAR_INTPNT_TOL_INFEAS = prec(1);
 param.MSK_DPAR_INTPNT_TOL_REL_GAP = max(1e-14,prec(1));
-command = sprintf( 'minimize echo(%d)', 3*~quiet );
+command = sprintf( 'minimize info echo(%d)', 3*~quiet );
 [ rr, res ] = cvx_run_solver( mfunc, command, prob, param, 'rr', 'res', settings, 3 ); %#ok
 if isfield( res.sol, 'int' ),
     sol = res.sol.int;
@@ -442,15 +457,23 @@ if ~isempty( xscale ),
     z(xscale) = z(xscale) / alpha;
 end
 status = '';
+lbound = [];
 switch sol.solsta,
     case { 'NEAR_PRIMAL_INFEASIBLE_CER', 'PRIMAL_INFEASIBLE_CER' },
         status = 'Infeasible';
         x(:) = NaN; scl = abs(b'*y); z = z / scl; y = y / scl;
+        lbound = Inf;
     case { 'NEAR_DUAL_INFEASIBLE_CER', 'DUAL_INFEASIBLE_CER' },
         status = 'Unbounded';
         y(:) = NaN; z(:) = NaN; x = x / abs(c'*x);
+        lbound = -Inf;
     case { 'OPTIMAL', 'NEAR_OPTIMAL', 'INTEGER_OPTIMAL', 'NEAR_INTEGER_OPTIMAL' },
         status = 'Solved';
+        if has_dual,
+            lbound = b' * y;
+        elseif res.info.MSK_IINF_MIO_NUM_RELAX > 0 && isfield( res.info, 'MSK_DINF_MIO_OBJ_BOUND' ),
+            lbound = res.info.MSK_DINF_MIO_OBJ_BOUND;
+        end
 end
 if isempty(status),
     switch sol.prosta,
@@ -494,12 +517,15 @@ if isempty(status),
                 tol  = min( [ tol2, ferr, uerr ] );
                 if tol == tol2,
                     status = 'Solved';
+                    lbound = dobj;
                 elseif tol == ferr,
                     status = 'Infeasible';
                     x(:) = NaN; z = z / abs(dobj); y = y / abs(dobj);
+                    lbound = Inf;
                 else
                     status = 'Unbounded';
                     y(:) = NaN; z(:) = NaN; x = x / abs(pobj);
+                    lbound = -Inf;
                 end
             else
                 warning( 'CVX:UnknownMosekStatus', 'Unknown MOSEK status: %s/%s', sol.prosta, sol.solsta );
@@ -515,6 +541,9 @@ elseif strncmp( sol.solsta, 'NEAR_', 5 ),
     status = [ 'Inaccurate/', status ];
 elseif tol > prec(2),
     status = [ 'Inaccurate/', status ];
+end
+if ~isempty( lbound ),
+    tol(2) = lbound;
 end
 iters = 0;
 

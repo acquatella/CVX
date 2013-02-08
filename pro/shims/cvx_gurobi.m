@@ -104,10 +104,35 @@ if isempty( shim.name ),
     params = struct( 'OutputFlag', false );
     for k = 1 : length(fpaths),
         fpath = fpaths{k};
-        if ~exist( fpath, 'file' ) || any( strcmpi( fpath, fpaths(1:k-1) ) ),
+        tshim = oshim;
+        tshim.fullpath = fpath;
+        tshim.version = 'unknown';
+        new_dir = fpath(1:end-flen-1);
+        is_internal = strncmp( new_dir, int_path, int_plen );
+        if is_internal,
+            tshim.location = [ '{cvx}', new_dir(int_plen+1:end-length(mext)+2) ];
+        else
+            tt = strfind( new_dir, fs );
+            tshim.location = new_dir(1:tt(end-1)-1);
+        end
+        if ~exist( fpath, 'file' ),
+            if exist( strrep( fpath, mext(4:end), 'a64' ), 'file' ),
+                switch mext,
+                    case 'mexmaci', pform = '32-bit OSX';
+                    case 'glx',     pform = '32-bit Linux';
+                    case 'w32',     pform = '32-bit Windows';
+                    otherwise,      pform = [ 'the "', mext, '" platform' ];
+                end
+                tshim.error = sprintf( 'This version of Gurobi does not support %s.', pform );
+                if pform(1) ~= '"',
+                    tshim.error = [ tshim.error, ' If possible, please switch to the 64-bit version of MATLAB.' ];
+                end
+                shim = [ shim, tshim ]; %#ok
+            end
+            continue
+        elseif any( strcmp( fpath, fpaths(1:k-1) ) ),
             continue
         end
-        new_dir = fpath(1:end-flen-1);
         cd( new_dir );
         tshim = oshim;
         tshim.fullpath = fpath;
@@ -366,7 +391,7 @@ end
 prec(1) = prec(2);
 params.OutputFlag = double(~quiet);
 params.InfUnbdInfo = 1;
-params.QCPDual = +need_duals;
+params.QCPDual = true;
 params.BarConvTol = prec(1);
 params.BarQCPConvTol = prec(1);
 params.FeasibilityTol = max([1e-9,prec(1)]);
@@ -378,41 +403,48 @@ catch errmsg
 end
 tol = prec(2);
 x = []; y = []; z = [];
+lbound = [];
 switch res.status,
     case { 'NUMERIC', 'INF_OR_UNBD' },
         tol = Inf;
     case 'INFEASIBLE',
         status = 'Infeasible';
-        if ~isfield( res, 'farkasdual' ),
-            tol = Inf;
-        elseif need_duals,
+        if isfield( res, 'farkasdual' ),
             y = - res.farkasdual / abs( b' * res.farkasdual );
             z = prob.A' * y;
+        elseif need_duals,
+            tol = Inf;
         end
     case 'UNBOUNDED',
         status = 'Unbounded';
-        if ~isfield( res, 'unbdray' ),
-            tol = Inf;
-        else
+        if isfield( res, 'unbdray' ),
             x = res.unbdray / abs( prob.Obj' * res.unbdray );
+        else
+            tol = Inf;
         end
-    case { 'OPTIMAL', 'SUBOPTIMAL' },
+    case { 'OPTIMAL', 'SUBOPTIMAL', 'INTERRUPTED' },
         status = 'Solved';
         if isfield( res, 'x' ),
             x = res.x;
         else
             tol = Inf;
         end
-        if need_duals,
-            if isfield( res, 'pi' ),
-                y = res.pi;
-                z = prob.Obj - prob.A' * y;
-            else
-                tol = Inf;
-            end
+        if isfield( res, 'pi' ),
+            y = res.pi;
+            z = prob.Obj - prob.A' * y;
+            lbound = b' * y;
+        elseif need_duals,
+            tol = Inf;
         end
-        if res.status(1) == 'S',
+        if isfield( res, 'objbound' ),
+            lbound = res.objbound;
+        end
+        if tol == Inf,
+            status = 'Failed';
+        elseif res.status(1) == 'S',
             status = 'Inaccurate/Solved';
+        elseif res.status(1) == 'I',
+            status = 'Suboptimal';
         end
     otherwise,
         tol = Inf;
@@ -427,6 +459,9 @@ if tol == Inf,
     status = 'Failed';
 elseif tol > prec(2),
     status = [ 'Inaccurate/', status ];
+end
+if ~isempty( lbound ),
+    tol(2) = lbound;
 end
 if ~isempty( xscale ),
     x(xscale) = tmat*x(xscale);
