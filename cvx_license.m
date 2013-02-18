@@ -157,7 +157,7 @@ if verbose,
     if best_days >= 0 && ~ndxs(best_ndx),
         if found_saved,
             ltext{end+1} = 'Replacement license:';
-        elseif nargout > 0,
+        elseif nargout > 0 && ~clear_all,
             ltext{end+1} = 'Installing license:';
         else
             ltext{end+1} = 'Valid license found (run "cvx_setup" to install):';
