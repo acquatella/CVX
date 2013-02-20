@@ -214,6 +214,7 @@ prob  = struct( 'a', zp, 'blc', b, 'buc', b, 'blx', -Inf(n,1), 'bux', Inf(n,1), 
 prob.ints.sub = zp;
 xscale = zp;
 sdp_n = 0;
+nextmat = 1;
 for k = 1 : length( nonls ),
     nonl = nonls(k);
     ti = nonl.indices;
@@ -361,7 +362,7 @@ for k = 1 : length( nonls ),
             [ rr, cc, vv ] = find( cc ); %#ok
             mat = floor((rr-1)/nn);
             rr  = rr - nn * mat;
-            prob.barc.subj = [ prob.barc.subj ; mat + 1 ];
+            prob.barc.subj = [ prob.barc.subj ; mat + nextmat ];
             prob.barc.subk = [ prob.barc.subk ; row(rr) ];
             prob.barc.subl = [ prob.barc.subl ; col(rr) ];
             prob.barc.val  = [ prob.barc.val  ; vv ];
@@ -373,7 +374,7 @@ for k = 1 : length( nonls ),
             mat = floor((rr-1)/nn);
             rr  = rr - nn * mat;
             prob.bara.subi = [ prob.bara.subi ; cc  ];
-            prob.bara.subj = [ prob.bara.subj ; mat + 1 ];
+            prob.bara.subj = [ prob.bara.subj ; mat + nextmat ];
             prob.bara.subk = [ prob.bara.subk ; row(rr) ];
             prob.bara.subl = [ prob.bara.subl ; col(rr) ];
             prob.bara.val  = [ prob.bara.val  ; vv ];
@@ -384,6 +385,7 @@ for k = 1 : length( nonls ),
         sndxp = [ sndxp ; sign(vv2(:)) ]; %#ok
         sndxd = [ sndxd ; vv2(:) ]; %#ok
         sdp_n = sdp_n + nn * nv;
+        nextmat = nextmat + nv;
         
     end
 end
