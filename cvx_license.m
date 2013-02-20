@@ -289,7 +289,7 @@ if ~isempty( lic.hostid ),
         if isempty( hostid_name ),
             status = '';
         else
-            status = sprintf( '%s,', hostid_name{ndxs} );
+            status = sprintf( '%s,', hostid_name{:} );
             status = sprintf( ' (%s)', status(1:end-1) );
         end
     elseif any( strncmp( lic.hostid, '*', 1 ) ),
