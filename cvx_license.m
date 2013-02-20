@@ -65,6 +65,7 @@ for k = 1 : nargin,
         error( 'CVX:Licensing', 'Invalid use of the CVX licensing system.' );
     end
 end
+do_install = nargout > 0 && ~clear_all;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Look for all available license files %
@@ -94,18 +95,20 @@ end
 best_days = -1;
 best_ndx = 0;
 licenses = blank;
-found_saved = false;
+found_saved = 0;
 for k = 1 : length(lnames),
     lic = load_and_verify( lnames{k}, blank, fs );
     if isequal( lic.status, 'NOTFOUND' ), continue; end
-    if k == 1, 
-        found_saved = true; 
+    if strcmp( lic.filename, '(from saved preferences)' ),
+        found_saved = length(licenses) + 1;
     end
     found = false;
     for kk = 2 : length(licenses),
-        if ( isequal( licenses(kk).expiration, lic.expiration ) && ...
-             isequal( licenses(kk).signature, lic.signature ) ),
-            licenses(kk).filename{end+1} = lic.filename; %#ok
+        if ( licenses(kk).days_left == lic.days_left && ...
+             isequal( licenses(kk).email, lic.email ) && ...
+             isequal( sort( licenses(kk).username ), sort( lic.username ) ) && ...
+             isequal( sort( licenses(kk).hostid ), sort( lic.hostid ) ) )
+            licenses(kk).filename{end+1} = lic.filename;
             found = true;
             break
         end
@@ -116,8 +119,8 @@ for k = 1 : length(lnames),
             licenses(end+1) = lic; %#ok
         catch %#ok
             lic2 = blank;
-            for k = fieldnames(lic2)',
-                try lic2.(k{1}) = lic.(k{1}); catch end %#ok
+            for kk = fieldnames(lic2)',
+                try lic2.(kk{1}) = lic.(kk{1}); catch end %#ok
             end
             licenses(end+1) = lic2; %#ok
         end
@@ -147,17 +150,25 @@ if verbose,
     end
     ndxs = false(1,length(licenses));
     ndxs(1) = true;
-    ltext{end+1} = 'Installed license:';
     if found_saved,
+        if best_days >= 0 && best_ndx > 2 && do_install,
+            ltext{end+1} = 'Previous license:';
+        else
+            ltext{end+1} = 'Installed license:';
+        end
         ltext = print_license(licenses(2),'    ',ltext);
-        ndxs(2) = true;
-    else
+    elseif best_ndx == 0 || nargout == 0,
+        ltext{end+1} = 'Installed license:';
         ltext{end+1} = '    No license installed.';
     end
-    if best_days >= 0 && ~ndxs(best_ndx),
+    if best_days >= 0 && best_ndx ~= found_saved,
         if found_saved,
-            ltext{end+1} = 'Replacement license:';
-        elseif nargout > 0 && ~clear_all,
+            if do_install,
+                ltext{end+1} = 'Replacement license:';
+            else
+                ltext{end+1} = 'Replacement license found (run "cvx_setup" to install):';
+            end
+        elseif do_install,
             ltext{end+1} = 'Installing license:';
         else
             ltext{end+1} = 'Valid license found (run "cvx_setup" to install):';
@@ -165,6 +176,7 @@ if verbose,
         ndxs(best_ndx) = true;
         ltext = print_license(licenses(best_ndx),'    ',ltext);
     end
+    ndxs(2) = true;
     if any(~ndxs),
         if any(ndxs),
             prefix = '    ';
@@ -295,13 +307,6 @@ if ~isempty( lic.hostid ),
     end
     ltext{end+1} = sprintf( '%sHost ID: %s%s', prefix, l_hostid, status );
 end
-parser = java.text.SimpleDateFormat('yyyy-MM-dd');
-try
-    expire = parser.parse(lic.expiration);
-catch %#ok
-    lic.expiration = '0000-01-01';
-    expire = parser.parse(lic.expiration);
-end
 if lic.days_left < -365
     ltext{end+1} = sprintf( '%sEXPIRED: %s', prefix, lic.expiration );
 elseif lic.days_left < 0
@@ -320,8 +325,7 @@ end
 if strncmp( lic.status, 'UNEXPECTED ERROR:', 17 ),
     rndx = [ 0, regexp( lic.status, '\n' ), length(lic.status) + 1 ];
     for k = 1 : length(rndx)-1;
-        ltext{end+1} = sprintf('%s%s',prefix,lic.status(rndx(k)+1:rndx(k+1)-1));
-        spacer = '    ';
+        ltext{end+1} = sprintf('%s%s',prefix,lic.status(rndx(k)+1:rndx(k+1)-1)); %#ok
     end
 end
 
@@ -345,8 +349,18 @@ if isempty( base64 ),
 end
 try
     lic = [];
-    if isempty( fname ) && exist( [ prefdir, fs, 'cvx_prefs.mat' ], 'file' ),
-        lic = load( [ prefdir, fs, 'cvx_prefs.mat' ], 'license' );
+    if isempty( fname ),
+        if strncmp( computer, 'PC', 2 ), fsre = '\\'; else, fsre = '/'; end
+        pfile = [ regexprep( prefdir, [ fsre, 'R\d\d\d\d\w$' ], '' ), fs, 'cvx_prefs.mat' ];
+        if ~exist( pfile, 'file' ),
+            pfile2 = [ prefdir, fs, 'cvx_prefs.mat' ];
+            if exist( pfile2, 'file' ),
+                pfile = pfile2;
+            end
+        end
+    end
+    if isempty( fname ) && exist( pfile, 'file' ),
+        lic = load( pfile, 'license' );
         lic = lic.license;
         fname = '(from saved preferences)';
     elseif exist( fname, 'file' ),
@@ -529,7 +543,7 @@ for k = 1 : length(rndx) - 1,
         end
         while true,
             if emax + n_indent <= width || isempty( sndxs ),
-                lines{end+1} = [ 32 * ones(1,n_indent), line ];
+                lines{end+1} = [ 32 * ones(1,n_indent), line ]; %#ok
                 break;
             end
             sndx = sndxs( sndxs <= width - n_indent + 1 );
