@@ -4,14 +4,31 @@ function [ license, ltext ] = cvx_license( varargin )
 %    This file performs various functions needed to perform license
 %    management for the professional features of CVX.
 
+DEBUG = false;
+if DEBUG || any( cellfun( @(x)isequal(x,'-debug'), varargin ) ),
+    DEBUG = true;
+    fprintf( '\n* Debugging mode enabled.\n' );
+end
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Quick exit for cvx_global %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 if ~usejava( 'jvm' ),
     error( 'CVX:Licensing', 'The CVX licensing mechanism requires Java.' );
-elseif nargin == 1 && isstruct( varargin{1} ) && numel( varargin{1} ) == 1,
+elseif length(varargin) == 1 && isstruct( varargin{1} ) && numel( varargin{1} ) == 1,
+    if DEBUG,
+        fprintf( '* Single license verification.\n* Before:\n' );
+        ltext = print_license(varargin{1},'*     ',{});
+        fprintf( '%s\n', ltext{:} );
+    end
     license = full_verify( varargin{1} );
+    if DEBUG,
+        fprintf( '* After:\n' );
+        ltext = print_license(license,'*     ',{});
+        fprintf( '%s\n', ltext{:} );
+        fprintf( '\n' );
+    end
     return
 end
 
@@ -39,33 +56,73 @@ end
 clear_all = false;
 lnames = { '' };
 verbose = true;
-for k = 1 : nargin,
+if DEBUG && ~isempty(varargin),
+    fprintf( '* Processing arguments:\n' );
+end
+for k = 1 : length(varargin),
     arg = varargin{k};
     if isempty( arg ),
+        if DEBUG,
+            fprintf( '*     %d: <empty>\n', k );
+        end
         continue;
-    elseif ischar( arg ),
+    elseif ischar( arg ) && size(arg,1) == 1,
+        if DEBUG,
+            fprintf( '*     %d: %s: ', k, arg );
+        end
         switch arg,
             case '*key*',
+                if DEBUG,
+                    fprintf( 'public key requested.\n' );
+                end
                 license = get_public_key;
                 return
             case '-quiet',
+                if DEBUG,
+                    fprintf( 'quiet mode requested.\n' );
+                end
                 verbose = false;
             case '-clear',
+                if DEBUG,
+                    fprintf( 'license clear requested.\n' );
+                end
                 clear_all = true;
+            case '-debug',
+                if DEBUG,
+                    fprintf( 'debug mode requested.\n' );
+                end
             otherwise,
                 if exist( arg, 'file' ),
+                    if DEBUG,
+                        fprintf( 'file found.\n' );
+                    end
                     lnames{end+1} = arg; %#ok
-                elseif exist( [ arg, '.mat' ], 'file' ),
-                    lnames{end+1} = [ arg, '.mat' ], %#ok
                 else
-                    error( 'CVX:Licensing', 'License file "%s" does not exist.', arg );
+                    if DEBUG,
+                        fprintf( 'file not found.\n' );
+                    else
+                        error( 'CVX:Licensing', 'License file "%s" does not exist.', arg );
+                    end
                 end
         end
     else
-        error( 'CVX:Licensing', 'Invalid use of the CVX licensing system.' );
+        if DEBUG,
+            fprintf( '*     %d: invalid argument of type %s\n', k, class(arg) );
+        else
+            error( 'CVX:Licensing', 'Invalid use of the CVX licensing system.' );
+        end
     end
 end
 do_install = nargout > 0 && ~clear_all;
+if DEBUG,
+    if do_install,
+        fprintf( '* Mode: install if valid license found.\n' );
+    elseif nargout > 0,
+        fprintf( '* Mode: clear the installed license.\n' );
+    else
+        fprintf( '* Mode: find and verify licenses only.\n' );
+    end
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Look for all available license files %
@@ -76,28 +133,101 @@ do_install = nargout > 0 && ~clear_all;
 % --- Matlab path
 % --- Home directory
 % --- Desktop directory
-if length( lnames ) <= 1,
+if length( lnames ) <= 1 || DEBUG,
+    if DEBUG,
+        if length( lnames ) <= 1,
+            fprintf( '* No files listed. Adding default search locations:\n' ); 
+        else
+            fprintf( '* Adding default search locations for debug purposes:\n' ); 
+        end
+    end
+    tt = length(lnames);
     dname = 'cvx_license.dat';
-    lnames = [ lnames ; which( dname, '-all' ) ];
+    pnames = which( dname, '-all' );
+    for kk = 1 : length(pnames),
+        lnames{end+1} = pnames{k}; %#ok
+    end
+    if DEBUG,
+        fprintf( '*     From the MATLAB path:\n' );
+        if ~isempty( pnames ),
+            fprintf( '*         %s\n', pnames{:} );
+        else
+            fprintf( '*         no files found.\n' );
+        end
+    end
+    if DEBUG,
+        fprintf( '*     From standard locations:\n' );
+    end
     homedir = char(java.lang.System.getProperty('user.home'));
-    lnames{end+1} = [ homedir, fs, dname ];
-    lnames{end+1} = [ homedir, fs, 'Desktop', fs, dname ];
-    lnames{end+1} = [ homedir, fs, 'Downloads', fs, dname ];
-    [ dummy, ndxs ] = sort( lnames ); dummy = dummy(:);
-    tt = [ true ; ~strcmp( dummy(2:end), dummy(1:end-1) ) ];
-    lnames = lnames( sort(ndxs(tt)) );
+    tdirs = { '', 'Desktop', 'Documents', [ 'Documents', fs, 'MATLAB' ], 'Downloads', 'MATLAB' };
+    for k = 1 : length(tdirs),
+        tdir = tdirs{k};
+        if ~isempty(tdir), tdir = [ tdir, fs ]; end %#ok
+        tdir = [ homedir, fs, tdir, dname ]; %#ok
+        if ~exist( tdir, 'file' ),
+            if DEBUG,
+                fprintf( '*         %s: not found\n', tdir );
+            end
+        else
+            if DEBUG,
+                fprintf( '*         %s: found\n', tdir );
+            end
+            lnames{end+1} = tdir; %#ok
+        end
+    end
+    if DEBUG,
+       fprintf( '*     %d additional filename(s) added.\n', length(lnames)-tt );
+    end
+end
+if length( lnames ) > 2,
+    lnames = lnames(:);
+    [ lsort, lndxs ] = sort( lnames );
+    tt = true(size(lnames));
+    tt(lndxs) = [ true ; ~strcmp( lsort(2:end,:), lsort(1:end-1,:) ) ];
+    lnames = lnames(tt);
+    if DEBUG,
+        if all(tt),
+            fprintf( '* %d locations to test.\n', length(lnames) );
+        else
+            fprintf( '* %d duplicates removed; %d locations to test.\n', length(tt)-nnz(tt), nnz(tt) );
+        end
+    end
+elseif DEBUG,
+    fprintf( '* %d location(s) to test.\n', length(lnames) );
 end
 
 %%%%%%%%%%%%%%%%%%%%%
 % Test each license %
 %%%%%%%%%%%%%%%%%%%%%
 
+if DEBUG,
+    fprintf( '* Testing each license.\n' );
+end
 best_days = -1;
 best_ndx = 0;
 licenses = blank;
 found_saved = 0;
 for k = 1 : length(lnames),
-    lic = load_and_verify( lnames{k}, blank, fs );
+    if DEBUG,
+        if isempty(lnames{k}),
+            fprintf( '*     %d. Installed license:', k );
+        else
+            fprintf( '*     %d. %s:', k, lnames{k} );
+        end
+    end
+    try
+        lic = load_and_verify( lnames{k}, blank, fs );
+    catch exc
+        if DEBUG,
+            fprintf( '\n' );
+            lines = my_get_report( exc, true );
+            fprintf( '*         %s\n', lines{:} );
+        end
+        continue
+    end
+    if DEBUG,
+        fprintf( ' %s', lic.status );
+    end
     if isequal( lic.status, 'NOTFOUND' ), continue; end
     if strcmp( lic.filename, '(from saved preferences)' ),
         found_saved = length(licenses) + 1;
@@ -108,10 +238,16 @@ for k = 1 : length(lnames),
              isequal( licenses(kk).email, lic.email ) && ...
              isequal( sort( licenses(kk).username ), sort( lic.username ) ) && ...
              isequal( sort( licenses(kk).hostid ), sort( lic.hostid ) ) )
+            if DEBUG,
+                fprintf( ' (duplicate)' );
+            end
             licenses(kk).filename{end+1} = lic.filename;
             found = true;
             break
         end
+    end
+    if DEBUG,
+        fprintf( '\n' );
     end
     if ~found,
         lic.filename = { lic.filename };
@@ -350,7 +486,7 @@ end
 try
     lic = [];
     if isempty( fname ),
-        if strncmp( computer, 'PC', 2 ), fsre = '\\'; else, fsre = '/'; end
+        if strncmp( computer, 'PC', 2 ), fsre = '\\'; else fsre = '/'; end
         pfile = [ regexprep( prefdir, [ fsre, 'R\d\d\d\d\w$' ], '' ), fs, 'cvx_prefs.mat' ];
         if ~exist( pfile, 'file' ),
             pfile2 = [ prefdir, fs, 'cvx_prefs.mat' ];
@@ -522,7 +658,7 @@ else
     hostid_addr = p_hostid_addr;
 end
 
-function estr = my_get_report( exc )
+function lines = my_get_report( exc, debug )
 try
     errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
     errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
@@ -557,12 +693,16 @@ for k = 1 : length(rndx) - 1,
         end
     end
 end
-lines{end+1} = 'Please report this error to CVX Support by visiting';
-lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
-lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
-lines{end+1} = 'output of this function in your report. Thank you!';
+if nargin < 2 || ~debug,
+    lines{end+1} = 'Please report this error to CVX Support by visiting';
+    lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
+    lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
+    lines{end+1} = 'output of this function in your report. Thank you!';
+end
 lines{end+1} = '---------------------------------------------------------------';
-estr = sprintf( '%s\n', lines{:} );
+if nargin < 2 || ~debug,
+    lines = sprintf( '%s\n', lines{:} );
+end
 
 %%%%%%%%%%%%%%
 % END COMMON %
