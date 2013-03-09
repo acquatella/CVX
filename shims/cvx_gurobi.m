@@ -299,13 +299,7 @@ catch exc
         end
         throw( MException( 'CVX:GurobiLicense', exc ) );
     else
-        errtxt = strrep( exc.message, sprintf('\n'), sprintf('\n    ') );
-        if strcmp( exc.identifier, 'gurobi:Error' ),
-            error_msg = sprintf( 'An unexpected error was encountered:\n%s\n    %s\n%s\nPlease consult the Gurobi documentation for assistance.', line, errtxt, line );
-        else
-            error_msg = sprintf( 'An unexpected error was encountered:\n%s\n    %s\n%s\nPlease contact CVX support for assistance.', line, errtxt, line );
-        end
-        rethrow( MException( 'CVX:GurobiError', error_msg ) );
+        throw( MException( 'CVX:GurobiError', my_get_report( exc ) ) );
     end
 end
 if ~isempty(lfile),
@@ -627,11 +621,16 @@ else
 end
 
 function estr = my_get_report( exc )
-try
-    errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
-    errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
-catch %#ok
-    errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
+is_gurobi = strncmp( exc.identifier, 'gurobi:', 7 );
+if is_gurobi,
+    errmsg = exc.message;
+else
+    try
+        errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
+        errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
+    catch %#ok
+        errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
+    end
 end
 width = 64;
 lines = { 'UNEXPECTED ERROR: ---------------------------------------------' };
@@ -661,6 +660,7 @@ for k = 1 : length(rndx) - 1,
         end
     end
 end
+lines{end+1} = '---------------------------------------------------------------';
 lines{end+1} = 'Please report this error to CVX Support by visiting';
 lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
 lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
