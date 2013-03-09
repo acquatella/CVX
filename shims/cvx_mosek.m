@@ -479,7 +479,7 @@ switch sol.solsta,
 end
 if isempty(status),
     switch sol.prosta,
-        case { 'ILL_POSED', 'PRIMAL_FEASIBLE_OR_UNBOUNDED' },
+        case { 'ILL_POSED', 'PRIMAL_INFEASIBLE_OR_UNBOUNDED' },
             tol = Inf;
             x(:) = NaN; y(:) = NaN; z(:) = NaN; 
         case { 'PRIMAL_INFEASIBLE', 'NEAR_PRIMAL_INFEASIBLE' },
