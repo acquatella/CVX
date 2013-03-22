@@ -50,5 +50,12 @@ switch computer,
             end
         end
         system( [ 'otool -L', sprintf( ' %s', files{:} ) ] );
+    case 'GLNXA64',
+        cd( [ mpath, filesep, 'a64' ]  );
+        system( 'chrpath -r "." mosekopt.mexa64' );
+        system( 'chrpath -l mosekopt.mexa64' );
+        cd( [ mpath, filesep, 'glx' ] );
+        system( 'chrpath32 -r "." mosekopt.mexglx' );
+        system( 'chrpath32 -l mosekopt.mexglx' );
 end
 cd( odir )
