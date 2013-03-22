@@ -420,7 +420,7 @@ end
 prec(1) = prec(2);
 params.OutputFlag = double(~quiet);
 params.InfUnbdInfo = 1;
-params.QCPDual = true;
+params.QCPDual = need_y;
 params.BarConvTol = prec(1);
 params.BarQCPConvTol = prec(1);
 params.FeasibilityTol = max([1e-9,prec(1)]);
@@ -434,6 +434,7 @@ switch res.status,
         tol = Inf;
     case 'INFEASIBLE',
         status = 'Infeasible';
+        lbound = -Inf;
         if isfield( res, 'farkasdual' ),
             y = - res.farkasdual / abs( prob.RHS' * res.farkasdual );
             if need_z, z = prob.A' * y; end
@@ -442,6 +443,7 @@ switch res.status,
         end
     case 'UNBOUNDED',
         status = 'Unbounded';
+        lbound = Inf;
         if isfield( res, 'unbdray' ),
             x = res.unbdray / abs( prob.Obj' * res.unbdray );
         else

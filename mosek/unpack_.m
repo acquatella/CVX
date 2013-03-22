@@ -34,7 +34,6 @@ mpath = mpath( 1 : temp(end) - 1 );
 odir = pwd;
 switch computer,
     case 'MACI64',
-        libs = { 'libmosek64.7.0.dylib', 'libiomp5.dylib' };
         cd( [ mpath, filesep, 'maci64' ] );
         files = [ dir('*.dylib' ); dir('*.mexmaci64') ];
         files = { files.name };

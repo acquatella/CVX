@@ -144,7 +144,7 @@ if length( lnames ) <= 1 || DEBUG,
     tt = length(lnames);
     dname = 'cvx_license.dat';
     pnames = which( dname, '-all' );
-    for kk = 1 : length(pnames),
+    for k = 1 : length(pnames),
         lnames{end+1} = pnames{k}; %#ok
     end
     if DEBUG,
@@ -228,22 +228,23 @@ for k = 1 : length(lnames),
     if DEBUG,
         fprintf( ' %s', lic.status );
     end
-    if isequal( lic.status, 'NOTFOUND' ), continue; end
-    if strcmp( lic.filename, '(from saved preferences)' ),
-        found_saved = length(licenses) + 1;
-    end
-    found = false;
-    for kk = 2 : length(licenses),
-        if ( licenses(kk).days_left == lic.days_left && ...
-             isequal( licenses(kk).email, lic.email ) && ...
-             isequal( sort( licenses(kk).username ), sort( lic.username ) ) && ...
-             isequal( sort( licenses(kk).hostid ), sort( lic.hostid ) ) )
-            if DEBUG,
-                fprintf( ' (duplicate)' );
+    found = isequal( lic.status, 'NOTFOUND' );
+    if ~found,
+        if strcmp( lic.filename, '(from saved preferences)' ),
+            found_saved = length(licenses) + 1;
+        end
+        for kk = 2 : length(licenses),
+            if ( licenses(kk).days_left == lic.days_left && ...
+                 isequal( licenses(kk).email, lic.email ) && ...
+                 isequal( sort( licenses(kk).username ), sort( lic.username ) ) && ...
+                 isequal( sort( licenses(kk).hostid ), sort( lic.hostid ) ) )
+                if DEBUG,
+                    fprintf( ' (duplicate)' );
+                end
+                licenses(kk).filename{end+1} = lic.filename;
+                found = true;
+                break
             end
-            licenses(kk).filename{end+1} = lic.filename;
-            found = true;
-            break
         end
     end
     if DEBUG,
