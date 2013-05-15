@@ -165,7 +165,6 @@ if isempty( shim.name ),
             ltype = 0;
         end
         tshim.params = struct( 'license', lfile, 'ltype', ltype );
-        if is_internal,
             if isempty( cvx___.license ),
                 switch ltype,
                 case 1,
@@ -175,10 +174,9 @@ if isempty( shim.name ),
                 otherwise,
                     tshim.error = 'A CVX Professional license is required.';
                 end
-            elseif ~try_internal,
+        elseif is_internal && ~try_internal,
                 tshim.error = 'This CVX Professional license does not include the internal Gurobi solver.';
             end
-        end
         if isempty( tshim.error ) && version < 500,
             tshim.error = 'CVX requires Gurobi 5.0 or later.';
         end
@@ -548,20 +546,25 @@ try
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(get_public_key);
     dsa.update(unicode2native(message,'UTF-8'));
+    lic.status = {};
     if ~dsa.verify(int8(signature)),
-        lic.status = 'INVALID:SIGNATURE';
-        days_left = -Inf;
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strcmp(lic.hostid,'*') ),
-        lic.status = 'INVALID:HOSTID';
-        days_left = -Inf;
-    elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
-        lic.status = 'INVALID:USER';
-        days_left = -Inf;
-    elseif days_left < 0,
-        lic.status = 'EXPIRED';
-    else
+        lic.status{end+1} = 'SIGNATURE';
+    end
+    if ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
+        lic.status{end+1} = 'HOSTID';
+    end
+    if ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
+        lic.status{end+1} = 'USER';
+    end
+    if days_left < 0,
+        lic.status{end+1} = 'EXPIRED';
+    end
+    if isempty( lic.status ),
         lic.signature = signature;
         lic.status = 'VERIFIED';
+    else
+        lic.status = sprintf( '%s,', lic.status{:} );
+        lic.status = sprintf( 'INVALID:%s', lic.status(1:end-1) );
     end
     lic.days_left = days_left;
 catch exc 
@@ -595,6 +598,19 @@ if isempty( p_hostid_addr )
             hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
         end
     end
+    if isempty( hostid_addr ),
+        if strncmp( computer, 'MAC', 3 ),
+            [status,str] = system('/sbin/ifconfig'); %#ok
+            str = regexp( str, '^en\d:(\s+.*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
+            for k = 1 : length(str),
+                str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)',  'tokens' );
+                if ~isempty( str2 ),
+                    hostid_name{end+1} = str2{1}{1};
+                    hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' );
+                end
+            end
+        end
+    end
     if ~isempty( hostid_name )
         if strncmp( computer, 'MAC', 3 ), 
             master = 'en'; 
@@ -622,17 +638,12 @@ else
     hostid_addr = p_hostid_addr;
 end
 
-function estr = my_get_report( exc )
-is_gurobi = strncmp( exc.identifier, 'gurobi:', 7 );
-if is_gurobi,
-    errmsg = exc.message;
-else
-    try
-        errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
-        errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
-    catch %#ok
-        errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
-    end
+function lines = my_get_report( exc, debug )
+try
+    errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
+    errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
+catch %#ok
+    errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
 end
 width = 64;
 lines = { 'UNEXPECTED ERROR: ---------------------------------------------' };
@@ -662,13 +673,16 @@ for k = 1 : length(rndx) - 1,
         end
     end
 end
+if nargin < 2 || ~debug,
+    lines{end+1} = 'Please report this error to CVX Support by visiting';
+    lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
+    lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
+    lines{end+1} = 'output of this function in your report. Thank you!';
+end
 lines{end+1} = '---------------------------------------------------------------';
-lines{end+1} = 'Please report this error to CVX Support by visiting';
-lines{end+1} = '    http://support.cvxr.com/support/tickets/new';
-lines{end+1} = 'or by sending an email to cvx@cvxr.com. Please include the full';
-lines{end+1} = 'output of this function in your report. Thank you!';
-lines{end+1} = '---------------------------------------------------------------';
-estr = sprintf( '%s\n', lines{:} );
+if nargin < 2 || ~debug,
+    lines = sprintf( '%s\n', lines{:} );
+end
 
 %%%%%%%%%%%%%%
 % END COMMON %

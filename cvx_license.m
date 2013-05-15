@@ -203,10 +203,10 @@ end
 if DEBUG,
     fprintf( '* Testing each license.\n' );
 end
+nfound = 0;
 best_days = -1;
 best_ndx = 0;
 licenses = blank;
-found_saved = 0;
 for k = 1 : length(lnames),
     if DEBUG,
         if isempty(lnames{k}),
@@ -230,10 +230,7 @@ for k = 1 : length(lnames),
     end
     found = isequal( lic.status, 'NOTFOUND' );
     if ~found,
-        if strcmp( lic.filename, '(from saved preferences)' ),
-            found_saved = length(licenses) + 1;
-        end
-        for kk = 2 : length(licenses),
+        for kk = 1 : length(licenses),
             if ( licenses(kk).days_left == lic.days_left && ...
                  isequal( licenses(kk).email, lic.email ) && ...
                  isequal( sort( licenses(kk).username ), sort( lic.username ) ) && ...
@@ -250,16 +247,15 @@ for k = 1 : length(lnames),
     if DEBUG,
         fprintf( '\n' );
     end
-    if ~found,
+    if ~found || isempty(lnames{k}),
+        nfound = nfound + 1;
         lic.filename = { lic.filename };
         try
-            licenses(end+1) = lic; %#ok
-        catch %#ok
-            lic2 = blank;
-            for kk = fieldnames(lic2)',
-                try lic2.(kk{1}) = lic.(kk{1}); catch end %#ok
+            licenses(nfound) = lic;
+        catch
+            for kk = fieldnames(lic)',
+                licenses(nfound).(kk{1}) = lic.(kk{1});
             end
-            licenses(end+1) = lic2; %#ok
         end
         if isequal( lic.status, 'VERIFIED' ) && lic.days_left > best_days,
             best_days = lic.days_left;
@@ -281,25 +277,25 @@ if verbose,
     ltext{end+1} = sprintf( '    Username: %s', get_username );
     [ hostid_addr, hostid_name ] = get_hostid;
     if isempty( hostid_addr )
-        ltext{end+1} = '    Host IDs: none';
+        ltext{end+1} = '    Host ID: none';
     else
-        ltext{end+1} = sprintf( '    Host IDs: %s (%s)', hostid_addr{1}, hostid_name{1} );
+        ltext{end+1} = sprintf( '    Host ID: %s (%s)', hostid_addr{1}, hostid_name{1} );
     end
-    ndxs = false(1,length(licenses));
-    ndxs(1) = true;
-    if found_saved,
-        if best_days >= 0 && best_ndx > 2 && do_install,
+    ndxs = false( 1, length(licenses) );
+    if ~strcmp( licenses(1).status, 'NOTFOUND' ),
+        if best_days >= 0 && best_ndx ~= 1 && do_install,
             ltext{end+1} = 'Previous license:';
         else
             ltext{end+1} = 'Installed license:';
         end
-        ltext = print_license(licenses(2),'    ',ltext);
+        ltext = print_license(licenses(1),'    ',ltext);
     elseif best_ndx == 0 || nargout == 0,
         ltext{end+1} = 'Installed license:';
         ltext{end+1} = '    No license installed.';
     end
-    if best_days >= 0 && best_ndx ~= found_saved,
-        if found_saved,
+    ndxs(1) = true;
+    if best_days >= 0 && best_ndx ~= 1,
+        if ~ndxs(1),
             if do_install,
                 ltext{end+1} = 'Replacement license:';
             else
@@ -313,11 +309,10 @@ if verbose,
         ndxs(best_ndx) = true;
         ltext = print_license(licenses(best_ndx),'    ',ltext);
     end
-    ndxs(2) = true;
     if any(~ndxs),
         if any(ndxs),
             prefix = '    ';
-            if nnz(ndxs) > 1,
+            if nnz(~ndxs) > 1,
                 ltext{end+1} = 'Other licenses found:';
                 prefix2 = '        ';
             else
@@ -382,10 +377,6 @@ if isfield( lic, 'filename' ) && ~isempty( lic.filename ),
         fprefix = fprefix2;
     end
 end
-if any( strcmp( lic.status, { 'EMPTY', 'CORRUPT' } ) )
-    ltext{end+1} = sprintf( '%sStatus: %s', prefix, lic.status );
-    return
-end
 if ~isempty( lic.organization ),
     ltext{end+1} = sprintf( '%sOrganization: %s', prefix, lic.organization );
 end
@@ -402,20 +393,13 @@ if ~isempty( lic.license_type ),
     ltext{end+1} = sprintf( '%sLicense type: %s', prefix, lic.license_type );
 end
 if ~isempty( lic.username ),
-    if any( strcmpi( get_username, lic.username ) ),
-        status = '';
-    elseif any( strncmp( lic.username, '*', 1 ) ), 
-        status = ' (unlocked username)';
-    else
-        status = ' (MISMATCH)';
-    end
     if ischar( lic.username ),
         l_username = lic.username;
     else
         l_username = sprintf( '%s, ', lic.username{:} );
         l_username = l_username(1:end-2);
     end
-    ltext{end+1} = sprintf( '%sNamed user: %s%s', prefix, l_username, status );
+    ltext{end+1} = sprintf( '%sNamed user: %s', prefix, l_username );
 end
 if ~isempty( lic.hostid ),
     [ hostid_addr, hostid_name ] = get_hostid;
@@ -423,18 +407,6 @@ if ~isempty( lic.hostid ),
     if any( ndxs ),
         hostid_name = hostid_name(ndxs);
         hostid_name = hostid_name(~cellfun('isempty',hostid_name));
-        if isempty( hostid_name ),
-            status = '';
-        else
-            status = sprintf( '%s,', hostid_name{:} );
-            status = sprintf( ' (%s)', status(1:end-1) );
-        end
-    elseif any( strncmp( lic.hostid, '*', 1 ) ),
-        status = ' (unlocked host id)';
-    elseif isempty( hostid_addr ),
-        status = ' (MISMATCH: no host id)';
-    else
-        status = ' (MISMATCH)';
     end
     if ischar( lic.hostid ),
         l_hostid = lic.hostid;
@@ -442,29 +414,26 @@ if ~isempty( lic.hostid ),
         l_hostid = sprintf( '%s, ', lic.hostid{:} );
         l_hostid = l_hostid(1:end-2);
     end
-    ltext{end+1} = sprintf( '%sHost ID: %s%s', prefix, l_hostid, status );
+    ltext{end+1} = sprintf( '%sHost ID: %s%s', prefix, l_hostid );
 end
 if lic.days_left < -365
-    ltext{end+1} = sprintf( '%sEXPIRED: %s', prefix, lic.expiration );
+    ltext{end+1} = sprintf( '%sExpiration: %s', prefix, lic.expiration );
 elseif lic.days_left < 0
     if lic.days_left == -1, plural = ''; else plural = 's'; end
-    ltext{end+1} = sprintf( '%sEXPIRED: %s (%d day%s ago)', prefix, lic.expiration, -lic.days_left, plural );
+    ltext{end+1} = sprintf( '%sExpiration: %s (%d day%s ago)', prefix, lic.expiration, -lic.days_left, plural );
 else
     lic.days_left = abs(lic.days_left);
     if lic.days_left == 1, plural = ''; else plural = 's'; end
     ltext{end+1} = sprintf( '%sExpiration: %s (%g day%s remaining)', prefix, lic.expiration, lic.days_left, plural );
-end
-if isequal( lic.status, 'INVALID:SIGNATURE' ) || isequal( lic.status, 'CORRUPT:SIGNATURE' ),
-    ltext{end+1} = sprintf( '%sSignature: INVALID', prefix );
-else
-    ltext{end+1} = sprintf( '%sSignature: valid', prefix );
 end
 if strncmp( lic.status, 'UNEXPECTED ERROR:', 17 ),
     rndx = [ 0, regexp( lic.status, '\n' ), length(lic.status) + 1 ];
     for k = 1 : length(rndx)-1;
         ltext{end+1} = sprintf('%s%s',prefix,lic.status(rndx(k)+1:rndx(k+1)-1)); %#ok
     end
-end
+else
+    ltext{end+1} = sprintf( '%sStatus: %s', prefix, lower( lic.status ) );
+end    
 
 function public_key = get_public_key
 persistent p_public_key
@@ -501,10 +470,9 @@ try
         lic = lic.license;
         fname = '(from saved preferences)';
     elseif exist( fname, 'file' ),
-        fid = fopen( fname );
+        fid = fopen( fname, 'r', 'n', 'UTF-8' );
         lic = textscan(fid,'%s%s','delimiter','=');
         fclose( fid );
-        lic{2}(1:end-1) = cellfun(@(x)native2unicode(x,'UTF-8'),lic{2}(1:end-1),'UniformOutput',false);
         lic = cell2struct( lic{2}, lic{1} );
         if isempty(lic.username),
             lic.username = {};
@@ -588,17 +556,25 @@ try
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(get_public_key);
     dsa.update(unicode2native(message,'UTF-8'));
+    lic.status = {};
     if ~dsa.verify(int8(signature)),
-        lic.status = 'INVALID:SIGNATURE';
-    elseif ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
-        lic.status = 'INVALID:HOSTID';
-    elseif ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
-        lic.status = 'INVALID:USER';
-    elseif days_left < 0,
-        lic.status = 'EXPIRED';
-    else
+        lic.status{end+1} = 'SIGNATURE';
+    end
+    if ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
+        lic.status{end+1} = 'HOSTID';
+    end
+    if ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
+        lic.status{end+1} = 'USER';
+    end
+    if days_left < 0,
+        lic.status{end+1} = 'EXPIRED';
+    end
+    if isempty( lic.status ),
         lic.signature = signature;
         lic.status = 'VERIFIED';
+    else
+        lic.status = sprintf( '%s,', lic.status{:} );
+        lic.status = sprintf( 'INVALID:%s', lic.status(1:end-1) );
     end
     lic.days_left = days_left;
 catch exc 
@@ -630,6 +606,19 @@ if isempty( p_hostid_addr )
         if ~isempty(hostid),
             hostid_name{end+1} = char(ni.getName); %#ok
             hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
+        end
+    end
+    if isempty( hostid_addr ),
+        if strncmp( computer, 'MAC', 3 ),
+            [status,str] = system('/sbin/ifconfig'); %#ok
+            str = regexp( str, '^en\d:(\s+.*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
+            for k = 1 : length(str),
+                str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)',  'tokens' );
+                if ~isempty( str2 ),
+                    hostid_name{end+1} = str2{1}{1};
+                    hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' );
+                end
+            end
         end
     end
     if ~isempty( hostid_name )
