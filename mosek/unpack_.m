@@ -74,7 +74,7 @@ switch computer,
             system( sprintf( 'chrpath -l %s', k{1} ) );
         end
         cd( [ mpath, filesep, 'glx' ] );
-        files = dir('*.mexa64');
+        files = dir('*.mexglx');
         files = { files.name };
         for k = files(:)',
             system( sprintf( 'chrpath32 -r "." %s', k{1} ) );
