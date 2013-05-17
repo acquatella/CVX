@@ -98,7 +98,7 @@ if is_new,
                 dver = round(nver*100);
                 for q = length(dd):-1:2,
                     if sscanf(dd{q},[fbase,'%d']) <= dver,
-                        shim.fullpath = [ new_dir, fs, dd{q} ];
+                        tshim.fullpath = [ new_dir, fs, dd{q} ];
                         mname = dd{q}(1:end-mlen-1);
                         break;
                     end
@@ -207,16 +207,16 @@ else
             shim.path = [ opath, ps ];
         end
     elseif isempty( shim.path ),
-        fpath2 = which( fname );
-        if ~isempty( fpath2 ),
-            fpath = fpath2; 
+        fpath = which( fname );
+        if isempty( fpath ),
+            shim.error = sprintf( 'The MOSEK MEX file previously found at\n    %s\nis no longer in the MATLAB path.', shim.fullpath );
         end
     elseif strcmp( mext2, mext ),
         shim.params.mext = mext;
         fpath = [ fpath(1:end-length(mext2)), mext ];
     end
-    if ~exist( fpath, 'file' ),
-        shim.error = sprintf( 'The MOSEK MEX file expected at\n    %sseems to be missing. Please re-run CVX_SETUP.', fpath );
+    if isempty( shim.error ) && ~exist( fpath, 'file' ),
+        shim.error = sprintf( 'The MOSEK MEX file expected at\n    %sseems to be missing.', fpath );
     end
     shim.fullpath = fpath;
     mfunc = str2func( mname );
