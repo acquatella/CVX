@@ -29,13 +29,14 @@ elseif isempty( cvx___.license ),
     try_internal = true;
 else
     try
-        cvx___.license = full_verify( cvx___.license );
-        if cvx___.license.days_left >= 0, 
-            switch cvx___.license.license_type,
+        lic = full_verify( cvx___.license );
+        cvx___.license = lic;
+        if ~isempty( lic.signature ),
+            switch lic.license_type,
             case { 'academic', 'trial' },
                 try_internal = true;
             otherwise,
-                try_internal = any( strfind( cvx___.license.license_type, '+gurobi' ) );
+                try_internal = any( strfind( lic.license_type, '+gurobi' ) );
             end
             if try_internal,
                 hostid = cvx___.license.hostid;
