@@ -1,4 +1,4 @@
-function [ license, ltext ] = cvx_license( varargin )
+function [ license, ltext, hid, hnm ] = cvx_license( varargin )
 
 % CVX_LICENSE   License processing for CVX Professional.
 %    This file performs various functions needed to perform license
@@ -76,6 +76,10 @@ for k = 1 : length(varargin),
                     fprintf( 'public key requested.\n' );
                 end
                 license = get_public_key;
+                if nargout > 1,
+                    ltext = get_username;
+                    [ hid, hnm ] = get_hostid;
+                end
                 return
             case '-quiet',
                 if DEBUG,
@@ -435,17 +439,6 @@ else
     ltext{end+1} = sprintf( '%sStatus: %s', prefix, lower( lic.status ) );
 end    
 
-function public_key = get_public_key
-persistent p_public_key
-if isempty( p_public_key ),
-    keyfac = java.security.KeyFactory.getInstance('DSA');
-    p_public_key = '308201b73082012c06072a8648ce3804013082011f02818100fd7f53811d75122952df4a9c2eece4e7f611b7523cef4400c31e3f80b6512669455d402251fb593d8d58fabfc5f5ba30f6cb9b556cd7813b801d346ff26660b76b9950a5a49f9fe8047b1022c24fbba9d7feb7c61bf83b57e7c6a8a6150f04fb83f6d3c51ec3023554135a169132f675f3ae2b61d72aeff22203199dd14801c70215009760508f15230bccb292b982a2eb840bf0581cf502818100f7e1a085d69b3ddecbbcab5c36b857b97994afbbfa3aea82f9574c0b3d0782675159578ebad4594fe67107108180b449167123e84c281613b7cf09328cc8a6e13c167a8b547c8d28e0a3ae1e2bb3a675916ea37f0bfa213562f1fb627a01243bcca4f1bea8519089a883dfe15ae59f06928b665e807b552564014c3bfecf492a038184000281804b5b19f08b0852bfd6527750cd897cf44909e5f875accee48fc43a1482c23d8203c63d63dfb353d4be3a3152ed2b15ed7cdb6ea3bfc5278ca3975d7f32f920bc6317417c0145afc8513b4920c75f0cec5eddbe325a8a311a2a5b4d84e5ba9675ba95c169e449637abc54baa1c95d87ae2cbd1d797bbbbfc63e00d2674f86d317';
-    p_public_key = uint8(hex2dec(reshape(p_public_key,2,length(p_public_key)/2)'));
-    p_public_key = java.security.spec.X509EncodedKeySpec(p_public_key);
-    p_public_key = keyfac.generatePublic(p_public_key);
-end
-public_key = p_public_key;
-
 function lic = load_and_verify( fname, blank, fs )
 persistent base64
 if isempty( base64 ),
@@ -521,12 +514,123 @@ catch exc
     lic.days_left = -Inf;
 end
 
+function public_key = get_public_key
+persistent p_public_key
+if isempty( p_public_key ),
+    keyfac = java.security.KeyFactory.getInstance('DSA');
+    p_public_key = '308201b73082012c06072a8648ce3804013082011f02818100fd7f53811d75122952df4a9c2eece4e7f611b7523cef4400c31e3f80b6512669455d402251fb593d8d58fabfc5f5ba30f6cb9b556cd7813b801d346ff26660b76b9950a5a49f9fe8047b1022c24fbba9d7feb7c61bf83b57e7c6a8a6150f04fb83f6d3c51ec3023554135a169132f675f3ae2b61d72aeff22203199dd14801c70215009760508f15230bccb292b982a2eb840bf0581cf502818100f7e1a085d69b3ddecbbcab5c36b857b97994afbbfa3aea82f9574c0b3d0782675159578ebad4594fe67107108180b449167123e84c281613b7cf09328cc8a6e13c167a8b547c8d28e0a3ae1e2bb3a675916ea37f0bfa213562f1fb627a01243bcca4f1bea8519089a883dfe15ae59f06928b665e807b552564014c3bfecf492a038184000281804b5b19f08b0852bfd6527750cd897cf44909e5f875accee48fc43a1482c23d8203c63d63dfb353d4be3a3152ed2b15ed7cdb6ea3bfc5278ca3975d7f32f920bc6317417c0145afc8513b4920c75f0cec5eddbe325a8a311a2a5b4d84e5ba9675ba95c169e449637abc54baa1c95d87ae2cbd1d797bbbbfc63e00d2674f86d317';
+    p_public_key = uint8(hex2dec(reshape(p_public_key,2,length(p_public_key)/2)'));
+    p_public_key = java.security.spec.X509EncodedKeySpec(p_public_key);
+    p_public_key = keyfac.generatePublic(p_public_key);
+end
+public_key = p_public_key;
+
+function username = get_username
+persistent p_username
+if isempty( p_username )
+    p_username = char(java.lang.System.getProperty('user.name'));
+end
+username = p_username;
+
+function [ hostid_addr, hostid_name ] = get_hostid
+persistent p_hostid_name p_hostid_addr
+if isempty( p_hostid_addr )
+    switch computer,
+        case { 'MACI', 'MACI64' },
+            master = 'en';
+            ismac = true;
+        otherwise,
+            master = 'eth';
+            ismac = false;
+    end
+    mlen = length(master);
+    hostid_name = {}; 
+    hostid_addr = {};
+    networks = java.net.NetworkInterface.getNetworkInterfaces();
+    while networks.hasMoreElements(),
+        ni = networks.nextElement();
+        nn = char(ni.getName);
+        if strncmp( nn, master, mlen ),
+            try
+                hostid = ni.getHardwareAddress();
+            catch %#ok
+                hostid = [];
+            end
+            if ~isempty(hostid),
+                hostid_name{end+1} = nn; %#ok
+                hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
+            end
+        end
+    end
+    if isempty( hostid_addr ) || ismac,
+    hostid_name = {}; 
+    hostid_addr = {};
+        try
+            switch computer,
+                case { 'MACI', 'MACI64' },
+                    [status,str] = system('/sbin/ifconfig'); %#ok
+                    str = regexp( str, '^en\d+:([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
+                    for k = 1 : length(str),
+                        str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)', 'tokens', 'dotall' );
+                        if ~isempty( str2 ) && ~any( strcmp( hostid_name, str2{1}{1} ) ),
+                            hostid_name{end+1} = str2{1}{1};
+                            hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' );
+                        end
+                    end
+                case { 'GLNX86', 'GLNXA64' },
+                    [status,str] = system('/sbin/ifconfig'); %#ok
+                    str = regexp( str, '^eth\d+([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
+                    for k = 1 : length(str),
+                        str2 = regexp( str{k}, '([\w\d]+).*\sHWaddr\s([0-9a-fA-F:]+)', 'tokens', 'dotall' );
+                        if ~isempty( str2 ),
+                            hostid_name{end+1} = str2{1}{1};
+                            hostid_addr{end+1} = lower( strrep( str2{1}{2}, ':', '' ) );
+                        end
+                    end
+                case { 'PCWIN', 'PCWIN64' },
+                    [status,str] = system('getmac /v /nh'); %#ok
+                    str = regexp( str, '\s((\w\w-){5}\w\w)\s', 'match', 'lineanchors' );
+                    for k = 1 : length(str),
+                        hostid_name{end+1} = sprintf('eth%d',k-1);
+                        hostid_addr{end+1} = lower(strrep(str{k}(2:end-1),'-',''));
+                    end
+            end
+        end
+    end
+    if ~isempty( hostid_name )
+        ndxs = find( strncmp( hostid_name, master, length(master) ) );
+        if ~isempty( ndxs ),
+            hostid_name = hostid_name(ndxs); 
+            hostid_addr = hostid_addr(ndxs);
+        end
+        [ hostid_name, ndxs2 ] = sort( hostid_name );
+        hostid_addr = hostid_addr(ndxs2);
+        if isempty( ndxs )
+            % If this computer does not have any 'en*' or 'eth*' ports, we
+            % are only going to trust the first hostID we find.
+            hostid_name = hostid_name(1);
+            hostid_addr = hostid_addr(1);
+        end
+    end
+    p_hostid_name = hostid_name;
+    p_hostid_addr = hostid_addr;
+else
+    hostid_name = p_hostid_name;
+    hostid_addr = p_hostid_addr;
+end
+
+function [ pkey, username, hostids ] = get_data
+pkey     = get_public_key;
+username = get_username;
+hostids  = get_hostid;
+
 %%%%%%%%%%%%%%%%
 % BEGIN COMMON %
 %%%%%%%%%%%%%%%%
 
-function lic = full_verify( lic )
+function [ lic, hostids ] = full_verify( lic )
 try
+    [ pkey, username, hostids ] = get_data;
     signature = lic.signature;
     lic.signature = [];
     parser = java.text.SimpleDateFormat('yyyy-MM-dd');
@@ -554,16 +658,16 @@ try
     end
     message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
-    dsa.initVerify(get_public_key);
+    dsa.initVerify(pkey);
     dsa.update(unicode2native(message,'UTF-8'));
     lic.status = {};
     if ~dsa.verify(int8(signature)),
         lic.status{end+1} = 'SIGNATURE';
     end
-    if ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
+    if ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), hostids ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
         lic.status{end+1} = 'HOSTID';
     end
-    if ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
+    if ~isempty( lic.username ) && ~any( strcmpi( username, lic.username ) ) && ~any( strncmp( lic.username, '*', 1 ) ),
         lic.status{end+1} = 'USER';
     end
     if days_left < 0,
@@ -581,71 +685,6 @@ catch exc
     if ~isstruct( lic ) || numel( lic ) ~= 1, lic = []; end
     lic.status = my_get_report(exc);
     lic.days_left = -Inf;
-end
-
-function username = get_username
-persistent p_username
-if isempty( p_username )
-    p_username = char(java.lang.System.getProperty('user.name'));
-end
-username = p_username;
-
-function [ hostid_addr, hostid_name ] = get_hostid
-persistent p_hostid_name p_hostid_addr
-if isempty( p_hostid_addr )
-    hostid_name = {}; 
-    hostid_addr = {};
-    networks = java.net.NetworkInterface.getNetworkInterfaces();
-    while networks.hasMoreElements(),
-        ni = networks.nextElement();
-        try
-            hostid = ni.getHardwareAddress();
-        catch %#ok
-            hostid = [];
-        end
-        if ~isempty(hostid),
-            hostid_name{end+1} = char(ni.getName); %#ok
-            hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
-        end
-    end
-    if isempty( hostid_addr ),
-        if strncmp( computer, 'MAC', 3 ),
-            [status,str] = system('/sbin/ifconfig'); %#ok
-            str = regexp( str, '^en\d:(\s+.*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
-            for k = 1 : length(str),
-                str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)',  'tokens' );
-                if ~isempty( str2 ),
-                    hostid_name{end+1} = str2{1}{1};
-                    hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' );
-                end
-            end
-        end
-    end
-    if ~isempty( hostid_name )
-        if strncmp( computer, 'MAC', 3 ), 
-            master = 'en'; 
-        else
-            master = 'eth'; 
-        end
-        ndxs = find( strncmp( hostid_name, master, length(master) ) );
-        if ~isempty( ndxs ),
-            hostid_name = hostid_name(ndxs); 
-            hostid_addr = hostid_addr(ndxs);
-        end
-        [ hostid_name, ndxs2 ] = sort( hostid_name );
-        hostid_addr = hostid_addr(ndxs2);
-        if isempty( ndxs )
-            % If this computer does not have any 'en*' or 'eth*' ports, we
-            % are only going to trust the first hostID we find.
-            hostid_name = hostid_name(1);
-            hostid_addr = hostid_addr(1);
-        end
-    end
-    p_hostid_name = hostid_name;
-    p_hostid_addr = hostid_addr;
-else
-    hostid_name = p_hostid_name;
-    hostid_addr = p_hostid_addr;
 end
 
 function lines = my_get_report( exc, debug )

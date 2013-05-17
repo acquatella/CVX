@@ -17,6 +17,7 @@ function shim = cvx_gurobi( shim )
 % called with a saved copy of the shim, it restores those handles.
 
 global cvx___
+persistent hostids
 if ~isempty( shim.solve ),
     return
 end
@@ -29,7 +30,7 @@ elseif isempty( cvx___.license ),
     try_internal = true;
 else
     try
-        lic = full_verify( cvx___.license );
+        [ lic, hostids ] = full_verify( cvx___.license );
         cvx___.license = lic;
         if ~isempty( lic.signature ),
             switch lic.license_type,
@@ -43,7 +44,7 @@ else
                 if isempty( hostid ),
                     try_internal = false;
                 elseif any( strcmp( hostid, '**' ) ),
-                    try_internal = any( cellfun( @(x)any(strcmp(x,hostid)), get_hostid ) );
+                    try_internal = any( cellfun( @(x)any(strcmp(x,hostid)), hostids ) );
                 end
             end
         elseif cvx___.license.days_left == -Inf,
@@ -150,7 +151,7 @@ if isempty( shim.name ),
             lfile = [];
         end
         try
-            res = gurobi5( lfile, prob, params );
+            res = gurobi5( lfile, hostids, prob, params );
         catch errmsg
             tshim.error = errmsg.message;
         end
@@ -182,7 +183,7 @@ if isempty( shim.name ),
             tshim.error = 'CVX requires Gurobi 5.0 or later.';
         end
         if isempty( tshim.error ),
-            grb = @(x,y)gurobi5(lfile,x,y);
+            grb = @(x,y)gurobi5(lfile,hostids,x,y);
             tshim.check = @check;
             tshim.solve = @(varargin)solve(grb,varargin{:});
             if no_native || k ~= 2,
@@ -223,13 +224,13 @@ else
     elseif isempty( cvx___.license ) && ltype~= 1 && ltype ~= 5,
         shim.error = 'A CVX Professional license is required.';
     else
-        grb = @(x,y)gurobi5(lfile,x,y);
+        grb = @(x,y)gurobi5(lfile,hostids,x,y);
         shim.check = @check;
         shim.solve = @(varargin)solve(grb,varargin{:});
     end
 end
 
-function res = gurobi5( lfile, prob, params )
+function res = gurobi5( lfile, hostids, prob, params )
 if ~isempty(lfile),
     oenv = getenv('GRB_LICENSE_FILE');
     setenv('GRB_LICENSE_FILE',lfile);
@@ -287,7 +288,7 @@ catch exc
                 fstr = fread( fid, Inf, 'uint8=>char' )';
                 fclose( fid );
                 match = regexp( fstr, 'HOSTID=([0-9a-f]+)', 'once' );
-                if match && ~any( cellfun( @(x)strcmp(x(5:end),fstr(match+7:match+14)), get_hostid ) ),
+                if match && ~any( cellfun( @(x)strcmp(x(5:end),fstr(match+7:match+14)), hostids ) ),
                     exc = sprintf( '%s\n    %s', exc, fstr(match:match+14) );
                 end
                 match = regexp( fstr, 'EXPIRATION=\d\d\d\d-\d\d-\d\d', 'once' );
@@ -505,19 +506,22 @@ iters = 0;
 % BEGIN SHIM_COMMON %
 %%%%%%%%%%%%%%%%%%%%%
 
-function public_key = get_public_key
+function [ pkey, username, hostids ] = get_data
 try
-    public_key = cvx_license( '*key*' );
+    [ pkey, username, hostids ] = cvx_license( '*key*' );
 catch %#ok
-    public_key = int8(0);
+    pkey = int8(0);
+    username = '';
+    hostids = '';
 end
 
 %%%%%%%%%%%%%%%%
 % BEGIN COMMON %
 %%%%%%%%%%%%%%%%
 
-function lic = full_verify( lic )
+function [ lic, hostids ] = full_verify( lic )
 try
+    [ pkey, username, hostids ] = get_data;
     signature = lic.signature;
     lic.signature = [];
     parser = java.text.SimpleDateFormat('yyyy-MM-dd');
@@ -545,16 +549,16 @@ try
     end
     message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
-    dsa.initVerify(get_public_key);
+    dsa.initVerify(pkey);
     dsa.update(unicode2native(message,'UTF-8'));
     lic.status = {};
     if ~dsa.verify(int8(signature)),
         lic.status{end+1} = 'SIGNATURE';
     end
-    if ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), get_hostid ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
+    if ~isempty( lic.hostid ) && ~any( cellfun( @(x)any(strcmp(x,lic.hostid)), hostids ) ) && ~any( strncmp( lic.hostid, '*', 1 ) ),
         lic.status{end+1} = 'HOSTID';
     end
-    if ~isempty( lic.username ) && ~any( strcmpi( get_username, lic.username ) ),
+    if ~isempty( lic.username ) && ~any( strcmpi( username, lic.username ) ) && ~any( strncmp( lic.username, '*', 1 ) ),
         lic.status{end+1} = 'USER';
     end
     if days_left < 0,
@@ -572,71 +576,6 @@ catch exc
     if ~isstruct( lic ) || numel( lic ) ~= 1, lic = []; end
     lic.status = my_get_report(exc);
     lic.days_left = -Inf;
-end
-
-function username = get_username
-persistent p_username
-if isempty( p_username )
-    p_username = char(java.lang.System.getProperty('user.name'));
-end
-username = p_username;
-
-function [ hostid_addr, hostid_name ] = get_hostid
-persistent p_hostid_name p_hostid_addr
-if isempty( p_hostid_addr )
-    hostid_name = {}; 
-    hostid_addr = {};
-    networks = java.net.NetworkInterface.getNetworkInterfaces();
-    while networks.hasMoreElements(),
-        ni = networks.nextElement();
-        try
-            hostid = ni.getHardwareAddress();
-        catch %#ok
-            hostid = [];
-        end
-        if ~isempty(hostid),
-            hostid_name{end+1} = char(ni.getName); %#ok
-            hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
-        end
-    end
-    if isempty( hostid_addr ),
-        if strncmp( computer, 'MAC', 3 ),
-            [status,str] = system('/sbin/ifconfig'); %#ok
-            str = regexp( str, '^en\d:(\s+.*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
-            for k = 1 : length(str),
-                str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)',  'tokens' );
-                if ~isempty( str2 ),
-                    hostid_name{end+1} = str2{1}{1};
-                    hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' );
-                end
-            end
-        end
-    end
-    if ~isempty( hostid_name )
-        if strncmp( computer, 'MAC', 3 ), 
-            master = 'en'; 
-        else
-            master = 'eth'; 
-        end
-        ndxs = find( strncmp( hostid_name, master, length(master) ) );
-        if ~isempty( ndxs ),
-            hostid_name = hostid_name(ndxs); 
-            hostid_addr = hostid_addr(ndxs);
-        end
-        [ hostid_name, ndxs2 ] = sort( hostid_name );
-        hostid_addr = hostid_addr(ndxs2);
-        if isempty( ndxs )
-            % If this computer does not have any 'en*' or 'eth*' ports, we
-            % are only going to trust the first hostID we find.
-            hostid_name = hostid_name(1);
-            hostid_addr = hostid_addr(1);
-        end
-    end
-    p_hostid_name = hostid_name;
-    p_hostid_addr = hostid_addr;
-else
-    hostid_name = p_hostid_name;
-    hostid_addr = p_hostid_addr;
 end
 
 function lines = my_get_report( exc, debug )
