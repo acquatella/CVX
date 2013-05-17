@@ -208,7 +208,9 @@ else
         end
     elseif isempty( shim.path ),
         fpath2 = which( fname );
-        if isempty( fpath ), fpath = fpath2; end
+        if ~isempty( fpath2 ),
+            fpath = fpath2; 
+        end
     elseif strcmp( mext2, mext ),
         shim.params.mext = mext;
         fpath = [ fpath(1:end-length(mext2)), mext ];
