@@ -246,7 +246,7 @@ catch exc
     else
         oenv = getenv( 'GRB_LICENSE_FILE' );
     end
-    if strfind( exc.message, 'No Gurobi license found.' ),
+    if strfind( exc.message, 'No Gurobi license found' ),
         gfile = [];
         if ~isempty( lfile ),
             if exist( lfile, 'file' ),
