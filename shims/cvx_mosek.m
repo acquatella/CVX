@@ -471,6 +471,14 @@ param.MSK_DPAR_INTPNT_TOL_DFEAS = prec(1);
 param.MSK_DPAR_INTPNT_TOL_INFEAS = prec(1);
 param.MSK_DPAR_INTPNT_TOL_REL_GAP = max(1e-14,prec(1));
 command = sprintf( 'minimize info echo(%d)', 3*~quiet );
+if isfield( settings, 'write' ),
+    wfile = settings.write;
+    if ~ischar( wfile ) || ndims( wfile ) ~= 2 || size( wfile, 1 ) ~= 1, %#ok
+        error( 'CVX:MosekError', 'write filename must be a string.' );
+    end
+    settings = rmfield( settings, 'write' );
+    command = sprintf( '%s write(%s)', command, wfile );
+end    
 [ rr, res ] = cvx_run_solver( mfunc, command, prob, param, 'rr', 'res', settings, 3 ); %#ok
 if isfield( res.sol, 'int' ),
     sol = res.sol.int;
