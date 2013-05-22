@@ -98,9 +98,8 @@ sedumi/, gurobi/, and mosek/ subdirectories, respectively. (If you received a ve
 of CVX distributed under the terms of the CVX Standard License, the mosek/ and gurobi/
 directories will not be present.) None of these packages are owned by CVX Research, Inc.
 They are included with permission of the authors. The solvers SDPT3 and SeDuMi are 
-subject to the terms of the GPLv2, while Gurobi and MOSEK are distributed under 
-commercial licenses. Please consult the documentation contained in each of these
-directories for more information about copying, citation, and so forth.
+subject to the terms of the GPLv2; therefore, you are free to redistribute them under
+the terms of this license.
 
 Example library
 ---------------

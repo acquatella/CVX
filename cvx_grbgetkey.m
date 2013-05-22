@@ -289,24 +289,11 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 if success
+    result = '';
 	fprintf( 'Contacting the Gurobi Optimization license server...' );
 	[status,result]=system( sprintf( '%s --path=%s %s', gname, tdir, kcode ) );
 	fprintf( 'done.\n' );
-    if status,
-        jprintf({
-                'An unexpected error occurred attempting to run the Gurobi key retrieval'
-                'utility found at'
-                ''
-                '    %s'
-                ''
-                'The following message occurred:'
-                ''
-                '    %s'
-                ''
-                'Please rectify this problem and try again.'
-            }, gname, result );
-        success = false;
-    elseif any( strfind( result, 'was not recognized as belonging to an academic domain.' ) );
+    if any( strfind( result, 'academic domain' ) );
         jprintf({
                 'This is an academic license, but your current IP address is not recognized'
                 'as belonging to an academic domain. This license can only be installed on'
