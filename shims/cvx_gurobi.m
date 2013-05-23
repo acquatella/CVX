@@ -501,7 +501,7 @@ if ~isempty( lbound ),
 end
 if ~isempty( xscale ),
     x(xscale) = tmat * x(xscale);
-    if need_duals,
+    if ~isempty( z ),
         z(xscale) = 0.5 * tmat * z(xscale);
     end
 end
