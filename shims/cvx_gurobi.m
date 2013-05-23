@@ -348,6 +348,7 @@ prob.UB    = -prob.LB;
 prob.Cones = struct( 'Index', {} );
 prob.vtype = 'C';
 prob.vtype = prob.vtype(1,ones(1,n));
+is_int = false;
 xscale = zeros(2,0);
 for k = 1 : length( nonls ),
     nonl = nonls(k);
@@ -357,14 +358,18 @@ for k = 1 : length( nonls ),
     switch tt,
         case 'i_integer',
             prob.vtype( ti ) = 'I';
+            is_int = true;
         case 'i_binary',
             prob.vtype( ti ) = 'B';
             prob.LB( ti ) = 0;
             prob.UB( ti ) = 1;
+            is_int = true;
         case 'i_semicontinuous',
             prob.vtype( ti ) = 'S';
+            is_int = true;
         case 'i_semiinteger',
             prob.vtype( ti ) = 'N';
+            is_int = true;
         case 'nonnegative',
             prob.LB( ti ) = 0;
         case 'lorentz',
@@ -449,7 +454,7 @@ switch res.status,
         else
             tol = Inf;
         end
-    case { 'OPTIMAL', 'SUBOPTIMAL', 'INTERRUPTED' },
+    case { 'OPTIMAL', 'SUBOPTIMAL', 'INTERRUPTED', 'TIME_LIMIT' },
         status = 'Solved';
         if isfield( res, 'x' ),
             x = res.x;
@@ -468,9 +473,9 @@ switch res.status,
         end
         if tol == Inf,
             status = 'Failed';
-        elseif res.status(1) == 'S',
+        elseif res.status(1) == 'S' && ~is_int,
             status = 'Inaccurate/Solved';
-        elseif res.status(1) == 'I',
+        elseif res.status(1) ~= 'O',
             status = 'Suboptimal';
         end
     otherwise,
