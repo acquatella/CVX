@@ -17,7 +17,6 @@ function shim = cvx_gurobi( shim )
 % called with a saved copy of the shim, it restores those handles.
 
 global cvx___
-persistent hostids
 if ~isempty( shim.solve ),
     return
 end
@@ -151,7 +150,7 @@ if isempty( shim.name ),
             lfile = [];
         end
         try
-            res = gurobi5( lfile, hostids, prob, params );
+            res = gurobi5( lfile, prob, params );
         catch errmsg
             tshim.error = errmsg.message;
         end
@@ -167,23 +166,23 @@ if isempty( shim.name ),
             ltype = 0;
         end
         tshim.params = struct( 'license', lfile, 'ltype', ltype );
-            if isempty( cvx___.license ),
-                switch ltype,
-                case 1,
-                    tshim.warning = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
-                case 5,
-                    tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a paid CVX Professional license is required for any non-academic use.' );
-                otherwise,
-                    tshim.error = 'A CVX Professional license is required.';
-                end
-        elseif is_internal && ~try_internal,
-                tshim.error = 'This CVX Professional license does not include the internal Gurobi solver.';
+        if isempty( cvx___.license ),
+            switch ltype,
+            case 1,
+                tshim.warning = sprintf( 'A trial Gurobi license is detected.\nFull CVX support is enabled, but a CVX Professional license will be required to use CVX with Gurobi after the trial has completed.' );
+            case 5,
+                tshim.warning = sprintf( 'An academic Gurobi license is detected.\nFull CVX support is enabled, but please note that a paid CVX Professional license is required for any non-academic use.' );
+            otherwise,
+                tshim.error = 'A CVX Professional license is required.';
             end
+        elseif is_internal && ~try_internal,
+            tshim.error = 'This CVX Professional license does not include the internal Gurobi solver.';
+        end
         if isempty( tshim.error ) && version < 500,
             tshim.error = 'CVX requires Gurobi 5.0 or later.';
         end
         if isempty( tshim.error ),
-            grb = @(x,y)gurobi5(lfile,hostids,x,y);
+            grb = @(x,y)gurobi5(lfile,x,y);
             tshim.check = @check;
             tshim.solve = @(varargin)solve(grb,varargin{:});
             if no_native || k ~= 2,
@@ -224,16 +223,16 @@ else
     elseif isempty( cvx___.license ) && ltype~= 1 && ltype ~= 5,
         shim.error = 'A CVX Professional license is required.';
     else
-        grb = @(x,y)gurobi5(lfile,hostids,x,y);
+        grb = @(x,y)gurobi5(lfile,x,y);
         shim.check = @check;
         shim.solve = @(varargin)solve(grb,varargin{:});
     end
 end
 
-function res = gurobi5( lfile, hostids, prob, params )
+function res = gurobi5( lfile, prob, params )
 if ~isempty(lfile),
-    oenv = getenv('GRB_LICENSE_FILE');
-    setenv('GRB_LICENSE_FILE',lfile);
+    oenv = getenv( 'GRB_LICENSE_FILE' );
+    setenv( 'GRB_LICENSE_FILE', lfile );
     params.isvname = 'CVX';
     params.appname = 'CVX';
     params.isv_key = '';
@@ -287,9 +286,16 @@ catch exc
             if fid ~= 0,
                 fstr = fread( fid, Inf, 'uint8=>char' )';
                 fclose( fid );
-                match = regexp( fstr, 'HOSTID=([0-9a-f]+)', 'once' );
-                if match && ~any( cellfun( @(x)strcmp(x(5:end),fstr(match+7:match+14)), hostids ) ),
-                    exc = sprintf( '%s\n    %s', exc, fstr(match:match+14) );
+                try
+                    [ pkey, username, hostids ] = get_data; %#ok
+                catch
+                    hostids = [];
+                end
+                if ~isempty( hostids ),
+                    match = regexp( fstr, 'HOSTID=([0-9a-f]+)', 'once' );
+                    if match && ~any( cellfun( @(x)strcmp(x(5:end),fstr(match+7:match+14)), hostids ) ),
+                        exc = sprintf( '%s\n    %s', exc, fstr(match:match+14) );
+                    end
                 end
                 match = regexp( fstr, 'EXPIRATION=\d\d\d\d-\d\d-\d\d', 'once' );
                 if match && floor(datenum(fstr(match+11:match+20),'yyyy-mm-dd'))<floor(datenum(clock))

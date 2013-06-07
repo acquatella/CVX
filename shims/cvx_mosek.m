@@ -534,6 +534,13 @@ switch sol.solsta,
         elseif res.info.MSK_IINF_MIO_NUM_RELAX > 0 && isfield( res.info, 'MSK_DINF_MIO_OBJ_BOUND' ),
             lbound = res.info.MSK_DINF_MIO_OBJ_BOUND;
         end
+    case 'PRIMAL_FEASIBLE',
+        if res.info.MSK_IINF_MIO_NUM_RELAX > 0,
+            status = 'Suboptimal';
+            if isfield( res.info, 'MSK_DINF_MIO_OBJ_BOUND' ),
+                lbound = res.info.MSK_DINF_MIO_OBJ_BOUND;
+            end
+        end
 end
 if isempty(status),
     switch sol.prosta,
