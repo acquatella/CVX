@@ -282,6 +282,10 @@ if verbose,
     [ hostid_addr, hostid_name ] = get_hostid;
     if isempty( hostid_addr )
         ltext{end+1} = '    Host ID: none';
+    elseif DEBUG || nargin == 0,
+        for k = 1 : length(hostid_addr),
+            ltext{end+1} = sprintf( '    Host ID: %s (%s)', hostid_addr{k}, hostid_name{k} ); %#ok
+        end
     else
         ltext{end+1} = sprintf( '    Host ID: %s (%s)', hostid_addr{1}, hostid_name{1} );
     end
@@ -406,12 +410,6 @@ if ~isempty( lic.username ),
     ltext{end+1} = sprintf( '%sNamed user: %s', prefix, l_username );
 end
 if ~isempty( lic.hostid ),
-    [ hostid_addr, hostid_name ] = get_hostid;
-    ndxs = cellfun( @(x)any(strcmp(x,lic.hostid)), hostid_addr );
-    if any( ndxs ),
-        hostid_name = hostid_name(ndxs);
-        hostid_name = hostid_name(~cellfun('isempty',hostid_name));
-    end
     if ischar( lic.hostid ),
         l_hostid = lic.hostid;
     else
@@ -463,9 +461,11 @@ try
         lic = lic.license;
         fname = '(from saved preferences)';
     elseif exist( fname, 'file' ),
-        fid = fopen( fname, 'r', 'n', 'UTF-8' );
-        lic = textscan(fid,'%s%s','delimiter','=');
+        fid = fopen( fname, 'r' );
+        lic = fread( fid, Inf, 'uint8' );
         fclose( fid );
+        lic = native2unicode( lic(:)', 'UTF-8' );
+        lic = textscan(lic,'%s%s','delimiter','=');
         lic = cell2struct( lic{2}, lic{1} );
         if isempty(lic.username),
             lic.username = {};
@@ -553,7 +553,7 @@ if isempty( p_hostid_addr )
         if strncmp( nn, master, mlen ),
             try
                 hostid = ni.getHardwareAddress();
-            catch %#ok
+            catch
                 hostid = [];
             end
             if ~isempty(hostid),
@@ -563,38 +563,37 @@ if isempty( p_hostid_addr )
         end
     end
     if isempty( hostid_addr ) || ismac,
-    hostid_name = {}; 
-    hostid_addr = {};
         try
             switch computer,
                 case { 'MACI', 'MACI64' },
-                    [status,str] = system('/sbin/ifconfig'); %#ok
+                    [status,str] = system('/sbin/ifconfig -a'); %#ok
                     str = regexp( str, '^en\d+:([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
                     for k = 1 : length(str),
                         str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)', 'tokens', 'dotall' );
                         if ~isempty( str2 ) && ~any( strcmp( hostid_name, str2{1}{1} ) ),
-                            hostid_name{end+1} = str2{1}{1};
-                            hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' );
+                            hostid_name{end+1} = str2{1}{1}; %#ok
+                            hostid_addr{end+1} = strrep( str2{1}{2}, ':', '' ); %#ok
                         end
                     end
                 case { 'GLNX86', 'GLNXA64' },
-                    [status,str] = system('/sbin/ifconfig'); %#ok
+                    [status,str] = system('/sbin/ifconfig -a'); %#ok
                     str = regexp( str, '^eth\d+([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
                     for k = 1 : length(str),
                         str2 = regexp( str{k}, '([\w\d]+).*\sHWaddr\s([0-9a-fA-F:]+)', 'tokens', 'dotall' );
-                        if ~isempty( str2 ),
-                            hostid_name{end+1} = str2{1}{1};
-                            hostid_addr{end+1} = lower( strrep( str2{1}{2}, ':', '' ) );
+                        if ~isempty( str2 ) && ~any( strcmp( hostid_name, str2{1}{1} ) ),
+                            hostid_name{end+1} = str2{1}{1}; %#ok
+                            hostid_addr{end+1} = lower( strrep( str2{1}{2}, ':', '' ) ); %#ok
                         end
                     end
                 case { 'PCWIN', 'PCWIN64' },
                     [status,str] = system('getmac /v /nh'); %#ok
                     str = regexp( str, '\s((\w\w-){5}\w\w)\s', 'match', 'lineanchors' );
                     for k = 1 : length(str),
-                        hostid_name{end+1} = sprintf('eth%d',k-1);
-                        hostid_addr{end+1} = lower(strrep(str{k}(2:end-1),'-',''));
+                        hostid_name{end+1} = sprintf('eth%d',k-1); %#ok
+                        hostid_addr{end+1} = lower(strrep(str{k}(2:end-1),'-','')); %#ok
                     end
             end
+        catch
         end
     end
     if ~isempty( hostid_name )
@@ -659,7 +658,7 @@ try
     message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(pkey);
-    dsa.update(unicode2native(message,'UTF-8'));
+    dsa.update(uint8(unicode2native(message,'UTF-8')));
     lic.status = {};
     if ~dsa.verify(int8(signature)),
         lic.status{end+1} = 'SIGNATURE';
@@ -691,7 +690,7 @@ function lines = my_get_report( exc, debug )
 try
     errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
     errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
-catch %#ok
+catch
     errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
 end
 width = 64;
