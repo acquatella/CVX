@@ -537,29 +537,26 @@ persistent p_hostid_name p_hostid_addr
 if isempty( p_hostid_addr )
     switch computer,
         case { 'MACI', 'MACI64' },
-            master = 'en';
+            master = '^en';
             ismac = true;
         otherwise,
-            master = 'eth';
+            master = '^(eth|em)';
             ismac = false;
     end
-    mlen = length(master);
     hostid_name = {}; 
     hostid_addr = {};
     networks = java.net.NetworkInterface.getNetworkInterfaces();
     while networks.hasMoreElements(),
         ni = networks.nextElement();
         nn = char(ni.getName);
-        if strncmp( nn, master, mlen ),
-            try
-                hostid = ni.getHardwareAddress();
-            catch
-                hostid = [];
-            end
-            if ~isempty(hostid),
-                hostid_name{end+1} = nn; %#ok
-                hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
-            end
+        try
+            hostid = ni.getHardwareAddress();
+        catch
+            hostid = [];
+        end
+        if ~isempty(hostid),
+            hostid_name{end+1} = nn; %#ok
+            hostid_addr{end+1} = sprintf('%02x',rem(double(hostid)+256,256)); %#ok
         end
     end
     if isempty( hostid_addr ) || ismac,
@@ -567,7 +564,7 @@ if isempty( p_hostid_addr )
             switch computer,
                 case { 'MACI', 'MACI64' },
                     [status,str] = system('/sbin/ifconfig -a'); %#ok
-                    str = regexp( str, '^en\d+:([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
+                    str = regexp( str, '^\w+:([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
                     for k = 1 : length(str),
                         str2 = regexp( str{k}, '([\w\d]+):.*\sether\s([0-9a-f:]+)', 'tokens', 'dotall' );
                         if ~isempty( str2 ) && ~any( strcmp( hostid_name, str2{1}{1} ) ),
@@ -577,7 +574,7 @@ if isempty( p_hostid_addr )
                     end
                 case { 'GLNX86', 'GLNXA64' },
                     [status,str] = system('/sbin/ifconfig -a'); %#ok
-                    str = regexp( str, '^eth\d+([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
+                    str = regexp( str, '^\w+([ \t].*\n)*', 'match', 'lineanchors', 'dotexceptnewline' );
                     for k = 1 : length(str),
                         str2 = regexp( str{k}, '([\w\d]+).*\sHWaddr\s([0-9a-fA-F:]+)', 'tokens', 'dotall' );
                         if ~isempty( str2 ) && ~any( strcmp( hostid_name, str2{1}{1} ) ),
@@ -597,7 +594,7 @@ if isempty( p_hostid_addr )
         end
     end
     if ~isempty( hostid_name )
-        ndxs = find( strncmp( hostid_name, master, length(master) ) );
+        ndxs = find( ~cellfun( @isempty, regexp( hostid_name, master ) ) );
         if ~isempty( ndxs ),
             hostid_name = hostid_name(ndxs); 
             hostid_addr = hostid_addr(ndxs);
