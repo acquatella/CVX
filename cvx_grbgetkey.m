@@ -293,12 +293,18 @@ if success
 	fprintf( 'Contacting the Gurobi Optimization license server...' );
 	[status,result]=system( sprintf( '%s --path=%s %s', gname, tdir, kcode ) );
 	fprintf( 'done.\n' );
-    if any( strfind( result, 'academic domain' ) );
+    if any( strfind( result, 'Unable to determine hostname' ) ) || any( strfind( result, 'not recognized as belonging to an academic domain' ) ),
         jprintf({
-                'This is an academic license, but your current IP address is not recognized'
-                'as belonging to an academic domain. This license can only be installed on'
-                'a computer connected to the university network.'
-            });
+            'The attempt to retrieve the license key failed with the following error'
+            'while trying to verify your academic license eligibility:'
+            ''
+            '    %s'
+            'For information about this error, please consult the Gurobi documentation'
+            ''
+            '    <a href="matlab: web(''http://www.gurobi.com/documentation/5.5/quick-start-guide/node5'',''-browser'');">http://www.gurobi.com/documentation/5.5/quick-start-guide/node5</a>'
+            ''
+            'Once you have rectified the error, please try again.'
+        }, regexprep(result,'.*---------------------\n+(.*?)\n+$','$1') );
         success = false;
     elseif any( strfind( result, 'already issued for host' ) )
         matches = regexp( fstr, 'already issued for host ''([^'']+)''', 'once' );
