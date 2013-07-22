@@ -1,5 +1,5 @@
 CVX: A system for disciplined convex programming
-Copyright 2012 CVX Research, Inc.
+Copyright 2005-2013 CVX Research, Inc.
 --------------------------------------------------------
 
 Thank you for downloading cvx. Please see the Installation chapter of the

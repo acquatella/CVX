@@ -1,5 +1,9 @@
 function shim = cvx_mosek( shim )
 
+% Copyright 2013 CVX Research, Inc.
+% This source file a trade secret of CVX Research, Inc. and may not be 
+% obtained or distributed without express written permission of the owner.
+
 global cvx___
 persistent hostids
 if ~isempty( shim.solve ),
@@ -739,9 +743,3 @@ end
 %%%%%%%%%%%%%%
 % END COMMON %
 %%%%%%%%%%%%%%
-
-% Copyright 2012 CVX Research, Inc.
-% See the file COPYING.txt for full copyright information.
-% The command 'cvx_where' will show where this file is located.% Copyright 2012 CVX Research, Inc.
-% See the file COPYING.txt for full copyright information.
-% The command 'cvx_where' will show where this file is located.

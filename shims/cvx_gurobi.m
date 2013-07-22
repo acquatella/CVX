@@ -1,5 +1,9 @@
 function shim = cvx_gurobi( shim )
 
+% Copyright 2013 CVX Research, Inc.
+% This source file a trade secret of CVX Research, Inc. and may not be 
+% obtained or distributed without express written permission of the owner.
+
 % GUROBI/CVX_SOLVER_SHIM   Initializes a connection between CVX and Gurobi.
 %
 % This function verifies that Gurobi is properly installed, licensed, and
@@ -157,12 +161,12 @@ if isempty( shim.name ),
         try
             version = res.versioninfo.major * 100 + 10 * res.versioninfo.minor + res.versioninfo.technical;
             tshim.version = sprintf( '%.2f', version / 100 );
-        catch %#ok
+        catch
             version = 0;
         end
         try
             ltype = res.versioninfo.license;
-        catch %#ok
+        catch
             ltype = 0;
         end
         tshim.params = struct( 'license', lfile, 'ltype', ltype );
@@ -203,7 +207,7 @@ else
         fpath = shim.fullpath;
         lfile = shim.params.license;
         ltype = shim.params.ltype;
-    catch %#ok
+    catch
         shim.error = 'The CVX/Gurobi interface has been updated. Please re-run CVX_SETUP.';
         return
     end
@@ -520,7 +524,7 @@ iters = 0;
 function [ pkey, username, hostids ] = get_data
 try
     [ pkey, username, hostids ] = cvx_license( '*key*' );
-catch %#ok
+catch
     pkey = int8(0);
     username = '';
     hostids = '';
@@ -593,7 +597,7 @@ function lines = my_get_report( exc, debug )
 try
     errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
     errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
-catch %#ok
+catch
     errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
 end
 width = 64;
@@ -638,7 +642,3 @@ end
 %%%%%%%%%%%%%%
 % END COMMON %
 %%%%%%%%%%%%%%
-
-% Copyright 2012 CVX Research, Inc.
-% See the file COPYING.txt for full copyright information.
-% The command 'cvx_where' will show where this file is located.

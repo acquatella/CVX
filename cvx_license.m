@@ -1,5 +1,9 @@
 function [ license, ltext, hid, hnm ] = cvx_license( varargin )
 
+% Copyright 2013 CVX Research, Inc.
+% This source file a trade secret of CVX Research, Inc. and may not be 
+% obtained or distributed without express written permission of the owner.
+
 % CVX_LICENSE   License processing for CVX Professional.
 %    This file performs various functions needed to perform license
 %    management for the professional features of CVX.
@@ -732,12 +736,3 @@ end
 %%%%%%%%%%%%%%
 % END COMMON %
 %%%%%%%%%%%%%%
-
-% Copyright 2012 CVX Research, Inc.
-% See the file COPYING.txt for full copyright information.
-% The command 'cvx_where' will show where this file is located.
-
-
-
-
-
