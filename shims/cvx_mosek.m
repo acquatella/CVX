@@ -149,7 +149,7 @@ if is_new,
             tshim.params.sdp = sdp;
             if is_internal || is_special,
                 if sdp,
-                    mfunc = @(command,varargin)m7(mfunc,command,varargin{:});
+                    mfunc = @(varargin)m7(mfunc,varargin{:});
                 else
                     mfunc = @m6;
                 end
@@ -167,8 +167,9 @@ if is_new,
         end
         clear(mname)
         if isempty( tshim.error ),
-            tshim.check = @(varargin)check(sdp,varargin{:});
-            tshim.solve = @(varargin)solve(sdp,mfunc,varargin{:});
+            tshim.check = @check;
+            tshim.solve = @solve;
+            tshim.eargs = { sdp, mfunc };
             if k ~= 2, tshim.path = [ new_dir, ps ]; end
         end
         shim = [ shim, tshim ]; %#ok
@@ -185,7 +186,7 @@ else
         mext2 = shim.params.mext;
         nver2 = shim.params.nver;
         mname = shim.params.mname;
-    catch %#ok
+    catch
         shim.error = 'The CVX/MOSEK interface has been updated. Please re-run CVX_SETUP.';
         return
     end
@@ -229,14 +230,15 @@ else
         if ~try_internal,
             shim.error = 'A CVX Professional license is required.';
         elseif sdp,
-            mfunc = @(c,varargin)m7(mfunc,c,varargin{:});
+            mfunc = @(varargin)m7(mfunc,varargin{:});
         else
             mfunc = @m6;
         end
     end
     if isempty( shim.error ),
-        shim.check = @(varargin)check(sdp,varargin{:});
-        shim.solve = @(varargin)solve(sdp,mfunc,varargin{:});
+        shim.check = @check;
+        shim.solve = @solve;
+        shim.eargs = { sdp, mfunc };
     end
 end
 
@@ -248,7 +250,7 @@ function [ rr, res ] = m7( mfunc, command, varargin )
 temp = [ 9, 4, 889, 3, 2013, 40, 74, 95, 36, 238, 110, 221, 213, 152, 251, 223, 3, 130, 183, 92, 60 ];
 [ rr, res ] = mfunc( [ command, ' lic' ], varargin{:}, temp );
 
-function found_bad = check( sdp, nonls )
+function found_bad = check( nonls, sdp, mfunc ) %#ok
 found_bad = false;
 if ~sdp,
     for k = 1 : length( nonls ),
@@ -260,7 +262,7 @@ if ~sdp,
     end
 end
 
-function [ x, status, tol, iters, y, z ] = solve( sdp, mfunc, At, b, c, nonls, quiet, prec, settings )
+function [ x, status, tol, iters, y, z ] = solve( At, b, c, nonls, quiet, prec, settings, sdp, mfunc )
 zp = zeros(0,1);
 [n,m] = size(At);
 b = b(:); c = c(:);
@@ -625,7 +627,7 @@ iters = 0;
 function [ pkey, username, hostids ] = get_data
 try
     [ pkey, username, hostids ] = cvx_license( '*key*' );
-catch %#ok
+catch
     pkey = int8(0);
     username = '';
     hostids = '';
@@ -666,7 +668,7 @@ try
     message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(pkey);
-    dsa.update(unicode2native(message,'UTF-8'));
+    dsa.update(uint8(unicode2native(message,'UTF-8')));
     lic.status = {};
     if ~dsa.verify(int8(signature)),
         lic.status{end+1} = 'SIGNATURE';
@@ -698,7 +700,7 @@ function lines = my_get_report( exc, debug )
 try
     errmsg = getReport( exc, 'extended', 'hyperlinks', 'off' );
     errmsg = regexprep( errmsg,'</?a[^>]*>', '' );
-catch %#ok
+catch
     errmsg = sprintf( '%s\n    Line %d: %s\n', exc.message, exc.stack(1).line, exc.stack(1).file );
 end
 width = 64;
@@ -743,3 +745,4 @@ end
 %%%%%%%%%%%%%%
 % END COMMON %
 %%%%%%%%%%%%%%
+

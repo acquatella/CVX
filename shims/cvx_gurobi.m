@@ -186,9 +186,9 @@ if isempty( shim.name ),
             tshim.error = 'CVX requires Gurobi 5.0 or later.';
         end
         if isempty( tshim.error ),
-            grb = @(x,y)gurobi5(lfile,x,y);
             tshim.check = @check;
-            tshim.solve = @(varargin)solve(grb,varargin{:});
+            tshim.solve = @solve;
+            tshim.eargs = { lfile };
             if no_native || k ~= 2,
                 tshim.path = [ new_dir, ps ];
             end
@@ -203,6 +203,7 @@ if isempty( shim.name ),
 else
     shim.check = [];
     shim.solve = [];
+    shim.eargs = {};
     try
         fpath = shim.fullpath;
         lfile = shim.params.license;
@@ -227,9 +228,9 @@ else
     elseif isempty( cvx___.license ) && ltype~= 1 && ltype ~= 5,
         shim.error = 'A CVX Professional license is required.';
     else
-        grb = @(x,y)gurobi5(lfile,x,y);
         shim.check = @check;
-        shim.solve = @(varargin)solve(grb,varargin{:});
+        shim.solve = @solve;
+        shim.eargs = { lfile };
     end
 end
 
@@ -342,7 +343,7 @@ end
 % This routine accepts the problem to solve in internal CVX form and
 % performs the conversions necessary for Gurobi to solve it.
 
-function [ x, status, tol, iters, y, z ] = solve( mfunc, At, b, c, nonls, quiet, prec, settings )
+function [ x, status, tol, iters, y, z ] = solve( At, b, c, nonls, quiet, prec, settings, lfile )
 need_y = nargout > 4;
 need_z = nargout > 5;
 
@@ -440,7 +441,7 @@ params.BarConvTol = prec(1);
 params.BarQCPConvTol = prec(1);
 params.FeasibilityTol = max([1e-9,prec(1)]);
 params.OptimalityTol = max([1e-9,prec(1)]);
-res = cvx_run_solver( mfunc, prob, params, 'res', settings, 2 );
+res = cvx_run_solver( @gurobi5, lfile, prob, params, 'res', settings, 3 );
 tol = prec(2);
 x = []; y = []; z = [];
 lbound = [];
@@ -565,7 +566,7 @@ try
     message = sprintf( '%s|', lic.prefix, lic.name, lic.organization, lic.email, lic.license_type, t_username, t_hostid, lic.expiration, lic.prefix(end:-1:1) );
     dsa = java.security.Signature.getInstance('SHA1withDSA');
     dsa.initVerify(pkey);
-    dsa.update(unicode2native(message,'UTF-8'));
+    dsa.update(uint8(unicode2native(message,'UTF-8')));
     lic.status = {};
     if ~dsa.verify(int8(signature)),
         lic.status{end+1} = 'SIGNATURE';
