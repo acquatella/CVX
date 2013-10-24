@@ -1,45 +1,45 @@
 if exist( '~/Downloads/mosektoolsosx64x86.tar.bz2', 'file' ),
     system( 'rm -rf /tmp/mosek' );
     system( 'tar jvfx ~/Downloads/mosektoolsosx64x86.tar.bz2 -C /tmp "*/libmosek64.7.0.dylib" "*/libiomp5.dylib" "*/mosekopt.mexmaci64"' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexmaci64 ~/cvx/trunk/mosek/maci64/mosekopt.mexmaci64' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexmaci64 ~/cvx/trunk/mosek/maci64/mosekopt801.mexmaci64' );
-    system( 'mv -f /tmp/mosek/7/tools/platform/osx64x86/bin/* ~/cvx/trunk/mosek/maci64/' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexmaci64 ~/Projects/CVX/trunk/mosek/maci64/mosekopt.mexmaci64' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexmaci64 ~/Projects/CVX/trunk/mosek/maci64/mosekopt801.mexmaci64' );
+    system( 'mv -f /tmp/mosek/7/tools/platform/osx64x86/bin/* ~/Projects/CVX/trunk/mosek/maci64/' );
     system( 'rm -rf /tmp/mosek' );
 end
 if exist( '~/Downloads/mosektoolslinux64x86.tar.bz2', 'file' ),
     system( 'rm -rf /tmp/mosek' );
     system( 'tar jvfx ~/Downloads/mosektoolslinux64x86.tar.bz2 -C /tmp "*/libmosek64.so.7.0" "*/libiomp5.so" "*/mosekopt.mexa64"' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexa64 ~/cvx/trunk/mosek/a64/mosekopt.mexa64' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexa64 ~/cvx/trunk/mosek/a64/mosekopt714.mexa64' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2012b/mosekopt.mexa64 ~/cvx/trunk/mosek/a64/mosekopt800.mexa64' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexa64 ~/cvx/trunk/mosek/a64/mosekopt801.mexa64' );
-    system( 'mv -f /tmp/mosek/7/tools/platform/linux64x86/bin/* ~/cvx/trunk/mosek/a64/' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexa64 ~/Projects/CVX/trunk/mosek/a64/mosekopt.mexa64' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexa64 ~/Projects/CVX/trunk/mosek/a64/mosekopt714.mexa64' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2012b/mosekopt.mexa64 ~/Projects/CVX/trunk/mosek/a64/mosekopt800.mexa64' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexa64 ~/Projects/CVX/trunk/mosek/a64/mosekopt801.mexa64' );
+    system( 'mv -f /tmp/mosek/7/tools/platform/linux64x86/bin/* ~/Projects/CVX/trunk/mosek/a64/' );
     system( 'rm -rf /tmp/mosek' );
 end
 if exist( '~/Downloads/mosektoolslinux32x86.tar.bz2', 'file' ),
     system( 'rm -rf /tmp/mosek' );
     system( 'tar jvfx ~/Downloads/mosektoolslinux32x86.tar.bz2 -C /tmp "*/libmosek.so.7.0" "*/libiomp5.so" "*/mosekopt.mexglx"' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexglx ~/cvx/trunk/mosek/glx/mosekopt.mexglx' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexglx ~/cvx/trunk/mosek/glx/mosekopt714.mexglx' );
-    system( 'mv -f /tmp/mosek/7/tools/platform/linux32x86/bin/* ~/cvx/trunk/mosek/glx/' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexglx ~/Projects/CVX/trunk/mosek/glx/mosekopt.mexglx' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexglx ~/Projects/CVX/trunk/mosek/glx/mosekopt714.mexglx' );
+    system( 'mv -f /tmp/mosek/7/tools/platform/linux32x86/bin/* ~/Projects/CVX/trunk/mosek/glx/' );
     system( 'rm -rf /tmp/mosek' );
 end
 if exist( '~/Downloads/mosektoolswin32x86.zip', 'file' ),
     system( 'rm -rf /tmp/mosek' );
     system( 'unzip -d /tmp ~/Downloads/mosektoolswin32x86.zip "*/libiomp5md.dll" "*/mosek7_0.dll" "*/mosekopt.mexw32"' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexw32 ~/cvx/trunk/mosek/w32/mosekopt.mexw32' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexw32 ~/cvx/trunk/mosek/w32/mosekopt714.mexw32' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexw32 ~/cvx/trunk/mosek/w32/mosekopt801.mexw32' );
-    system( 'mv -f /tmp/mosek/7/tools/platform/win32x86/bin/* ~/cvx/trunk/mosek/w32/' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexw32 ~/Projects/CVX/trunk/mosek/w32/mosekopt.mexw32' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexw32 ~/Projects/CVX/trunk/mosek/w32/mosekopt714.mexw32' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexw32 ~/Projects/CVX/trunk/mosek/w32/mosekopt801.mexw32' );
+    system( 'mv -f /tmp/mosek/7/tools/platform/win32x86/bin/* ~/Projects/CVX/trunk/mosek/w32/' );
     system( 'rm -rf /tmp/mosek' );
 end
 if exist( '~/Downloads/mosektoolswin64x86.zip', 'file' ),
     system( 'rm -rf /tmp/mosek' );
     system( 'unzip -d /tmp ~/Downloads/mosektoolswin64x86.zip "*/libiomp5md.dll" "*/mosek64_7_0.dll" "*/mosekopt.mexw64"' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexw64 ~/cvx/trunk/mosek/w64/mosekopt.mexw64' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexw64 ~/cvx/trunk/mosek/w64/mosekopt714.mexw64' );
-    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexw64 ~/cvx/trunk/mosek/w64/mosekopt801.mexw64' );
-    system( 'mv -f /tmp/mosek/7/tools/platform/win64x86/bin/* ~/cvx/trunk/mosek/w64/' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2009b/mosekopt.mexw64 ~/Projects/CVX/trunk/mosek/w64/mosekopt.mexw64' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2012a/mosekopt.mexw64 ~/Projects/CVX/trunk/mosek/w64/mosekopt714.mexw64' );
+    system( 'mv -f /tmp/mosek/7/toolbox/r2013a/mosekopt.mexw64 ~/Projects/CVX/trunk/mosek/w64/mosekopt801.mexw64' );
+    system( 'mv -f /tmp/mosek/7/tools/platform/win64x86/bin/* ~/Projects/CVX/trunk/mosek/w64/' );
     system( 'rm -rf /tmp/mosek' );
 end
 mpath = mfilename( 'fullpath' );
