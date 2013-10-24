@@ -19,7 +19,7 @@ if ~isempty(dd),
     system( [ 'tar xfz ~/Downloads/', dd(1).name, ' -C /tmp/gurobi' ] );
     system( 'mv -f /tmp/gurobi/*/linux64/bin/grbgetkey ~/Projects/CVX/trunk/gurobi/a64/' );
     system( 'svn rm ~/Projects/CVX/trunk/gurobi/a64/libgurobi*.so' );
-    system( 'mv -f /tmp/gurobi/*/linux64/lib/libgurobi*.so ~/Projects/CVX/trunk/gurobi/a64/' );
+    system( 'cp -fH /tmp/gurobi/*/linux64/lib/libgurobi*.so ~/Projects/CVX/trunk/gurobi/a64/' );
     system( 'svn add ~/Projects/CVX/trunk/gurobi/a64/libgurobi*.so' );
     system( 'mv -f /tmp/gurobi/*/linux64/matlab/gurobi.mexa64 ~/Projects/CVX/trunk/gurobi/a64/' );
     system( 'rm -rf /tmp/mosek' );
@@ -36,13 +36,6 @@ switch computer,
         for k = files(:)',
             system( sprintf( 'chrpath -r "." %s', k{1} ) );
             system( sprintf( 'chrpath -l %s', k{1} ) );
-        end
-        cd( [ mpath, filesep, 'glx' ] );
-        files = dir('*.mexglx');
-        files = { files.name };
-        for k = files(:)',
-            system( sprintf( 'chrpath32 -r "." %s', k{1} ) );
-            system( sprintf( 'chrpath32 -l %s', k{1} ) );
         end
 end
 cd( odir )
