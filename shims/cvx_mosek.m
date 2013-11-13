@@ -52,11 +52,12 @@ else
 end
 [ fs, ps, int_path, mext, nver ] = cvx_version;
 if nver < 7.14,
-    ismac = strncmp( mext, 'mexmaci', 7 );
-    if ismac,
-        shim.error = 'MOSEK support requires MATLAB 7.14 (R2012a) or later on the Mac.';
+    if strncmp( mext, 'mexmaci', 7 ),
+        shim.error = 'MOSEK requires 64-bit MATLAB 7.14 (R2012a) or later on Mac OSX.';
+    elseif nver < 7.05,
+        shim.error = 'MOSEK is supported only for MATLAB 7.9 (R2009b) or later.';
     elseif nver < 7.09,
-        shim.error = 'MOSEK support requires MATLAB 7.9 (R2009b) or later.';
+        shim.warning = 'MOSEK is supported only for MATLAB 7.9 (R2009b) or later. It *may* work this version of MATLAB, it is not supported.';
     end
 end
 if ~isempty( shim.error ),
