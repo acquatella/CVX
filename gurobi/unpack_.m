@@ -34,7 +34,7 @@ switch computer,
         files = dir('*.mexa64');
         files = { files.name };
         for k = files(:)',
-            system( sprintf( 'chrpath -r "." %s', k{1} ) );
+            system( sprintf( 'chrpath -r ''$ORIGIN'' %s', k{1} ) );
             system( sprintf( 'chrpath -l %s', k{1} ) );
         end
 end
