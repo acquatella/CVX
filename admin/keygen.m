@@ -32,10 +32,13 @@ else
     m_hostid = lic.hostid;
 end
 lic.expiration = input( 'Expiration date (YYYY-MM-DD): ', 's' );
-message = sprintf( '%s|', lic.name, lic.organization, lic.email, lic.license_type, m_username, m_hostid, lic.expiration );
+message = sprintf( '%s|', 'CVXRv1', lic.name, lic.organization, lic.email, lic.license_type, m_username, m_hostid, lic.expiration, '1vRXVC' );
 keys = load('keys');
 privkey = keys.keypair.getPrivate();
 dsa = java.security.Signature.getInstance('SHA1withDSA');
 dsa.initSign(privkey);
 dsa.update(unicode2native(message,'UTF-8'));
 lic.signature = dsa.sign()';
+disp( message );
+disp( lic.signature );
+

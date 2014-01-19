@@ -15,11 +15,23 @@ shim.check   = [];
 shim.solve   = [];
 try_internal = false;
 is_special   = false;
-if ~usejava('jvm'),
+[ fs, ps, int_path, mext, nver, isoctave ] = cvx_version;
+if isoctave,
+    shim.error = 'CVX Professional is not supported on Octave.';
+elseif ~usejava('jvm'),
     shim.error = 'Java support is required.';
 elseif isempty( cvx___.license ),
     shim.error = 'A CVX Professional license is required.';
-else
+elseif nver < 7.14,
+    if strncmp( mext, 'mexmaci', 7 ),
+        shim.error = 'MOSEK requires 64-bit MATLAB 7.14 (R2012a) or later on Mac OSX.';
+    elseif nver < 7.05,
+        shim.error = 'MOSEK is supported only for MATLAB 7.9 (R2009b) or later.';
+    elseif nver < 7.09,
+        shim.warning = 'MOSEK is supported only for MATLAB 7.9 (R2009b) or later. It *may* work this version of MATLAB, it is not supported.';
+    end
+end
+if isempty( shim.error ),    
     shim.error = 'An error occurred verifying the CVX Professional license.';
     try
         [ lic, hostids ] = full_verify( cvx___.license );
@@ -48,16 +60,6 @@ else
         end
     catch exc
         shim.error = my_get_report( exc );
-    end
-end
-[ fs, ps, int_path, mext, nver ] = cvx_version;
-if nver < 7.14,
-    if strncmp( mext, 'mexmaci', 7 ),
-        shim.error = 'MOSEK requires 64-bit MATLAB 7.14 (R2012a) or later on Mac OSX.';
-    elseif nver < 7.05,
-        shim.error = 'MOSEK is supported only for MATLAB 7.9 (R2009b) or later.';
-    elseif nver < 7.09,
-        shim.warning = 'MOSEK is supported only for MATLAB 7.9 (R2009b) or later. It *may* work this version of MATLAB, it is not supported.';
     end
 end
 if ~isempty( shim.error ),

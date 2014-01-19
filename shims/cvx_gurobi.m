@@ -24,10 +24,15 @@ global cvx___
 if ~isempty( shim.solve ),
     return
 end
+is_new = isempty( shim.name );
+shim.name = 'Gurobi';
 shim.check = [];
 shim.solve = [];
 try_internal = false;
-if ~usejava('jvm'),
+[ fs, ps, int_path, mext, nver, isoctave ] = cvx_version;
+if isoctave,
+    shim.error = 'CVX Professional is not supported on Octave.';
+elseif ~usejava('jvm'),
     shim.error = 'Java support is required.';
 elseif isempty( cvx___.license ),
     try_internal = true;
@@ -60,14 +65,11 @@ else
     end
 end
 if ~isempty( shim.error ),
-    shim.name = 'Gurobi';
     return
 end
-[ fs, ps, int_path, mext ] = cvx_version;
 fname = [ 'gurobi.', mext ];
 int_plen = length( int_path );
-if isempty( shim.name ),
-    shim.name = 'Gurobi';
+if is_new,
     shim.dualize = false;
     flen = length(fname);
     fpaths = { [ int_path, fs, 'gurobi', fs, mext(4:end), fs, fname ] };
@@ -306,9 +308,9 @@ catch exc
                 end
             end
         end
-        throw( MException( 'CVX:GurobiLicense', exc ) );
+        error( 'CVX:GurobiLicense', exc );
     else
-        throw( MException( 'CVX:GurobiError', my_get_report( exc ) ) );
+        error( 'CVX:GurobiError', my_get_report( exc ) );
     end
 end
 if ~isempty(lfile),
