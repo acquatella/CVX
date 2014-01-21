@@ -28,24 +28,30 @@ is_new = isempty( shim.name );
 shim.name = 'Gurobi';
 shim.check = [];
 shim.solve = [];
-try_internal = false;
-[ fs, ps, int_path, mext, nver, isoctave ] = cvx_version;
-if isoctave,
+fs = cvx___.fs;
+ps = cvx___.ps;
+mext = cvx___.mext;
+int_path = cvx___.where;
+if cvx___.isoctave,
     shim.error = 'CVX Professional is not supported on Octave.';
-elseif ~usejava('jvm'),
-    shim.error = 'Java support is required.';
+elseif cvx___.jver < 1.06,
+    if cvx___.jver == 0,
+        shim.error = 'CVX Professional requires Java 1.6 or later.';
+    else
+        shim.error = 'CVX Professional requires the Java VM, which is disabled.';
+    end
 elseif isempty( cvx___.license ),
     try_internal = true;
 else
+    try_internal = false;
     try
-        [ lic, hostids ] = full_verify( cvx___.license );
-        cvx___.license = lic;
-        if ~isempty( lic.signature ),
-            switch lic.license_type,
+        [ cvx___.license, hostids ] = full_verify( cvx___.license );
+        if ~isempty( cvx___.license.signature ),
+            switch cvx___.license.license_type,
             case { 'academic', 'trial' },
                 try_internal = true;
             otherwise,
-                try_internal = any( strfind( lic.license_type, '+gurobi' ) );
+                try_internal = any( strfind( cvx___.license.license_type, '+gurobi' ) );
             end
             if try_internal,
                 hostid = cvx___.license.hostid;
@@ -62,6 +68,9 @@ else
         end
     catch exc
         shim.error = my_get_report( exc );
+    end
+    if ~isempty( shim.error ),
+        cvx___.license = [];
     end
 end
 if ~isempty( shim.error ),

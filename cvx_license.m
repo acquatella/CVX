@@ -1,4 +1,4 @@
-function [ license, ltext, hid, hnm ] = cvx_license( varargin )
+function [ pkey, username, hostids ] = cvx_license( varargin )
 
 % Copyright 2013 CVX Research, Inc.
 % This source file a trade secret of CVX Research, Inc. and may not be 
@@ -8,49 +8,34 @@ function [ license, ltext, hid, hnm ] = cvx_license( varargin )
 %    This file performs various functions needed to perform license
 %    management for the professional features of CVX.
 
+global cvx___
+persistent blank
+
+try
+
+if ~isfield( cvx___, 'license' ),
+    cvx_version( 1 );
+    if ~isfield( cvx___, 'license' ),
+        error( 'CVX:Licensing', 'Unexpected error initializing CVX.\nPlease run CVX_VERSION directly for more verbose diagnostic info.\nIf necessary, please contact CVX support.' );
+    end
+elseif cvx___.jver < 1.6,
+    error( 'CVX:Licensing', 'The CVX licensing system requires Java VM version 1.6 or later.' );
+elseif cvx___.isoctave,
+    error( 'CVX:Licensing', 'The CVX licensing system does not run on Octave.' );
+end
+
 DEBUG = false;
 if DEBUG || any( cellfun( @(x)isequal(x,'-debug'), varargin ) ),
     DEBUG = true;
-    fprintf( '\n* Debugging mode enabled.\n' );
+    fprintf( '* Debugging mode enabled.\n' );
 end
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Quick exit for cvx_global %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-if ~usejava( 'jvm' ),
-    error( 'CVX:Licensing', 'The CVX licensing mechanism requires Java.' );
-elseif length(varargin) == 1 && isstruct( varargin{1} ) && numel( varargin{1} ) == 1,
-    if DEBUG,
-        fprintf( '* Single license verification.\n* Before:\n' );
-        ltext = print_license(varargin{1},'*     ',{});
-        fprintf( '%s\n', ltext{:} );
-    end
-    license = full_verify( varargin{1} );
-    if DEBUG,
-        fprintf( '* After:\n' );
-        ltext = print_license(license,'*     ',{});
-        fprintf( '%s\n', ltext{:} );
-        fprintf( '\n' );
-    end
-    return
-end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Full processing for cvx_setup %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-persistent blank fs
-if isempty( fs ),
+fs = cvx___.fs;
+if isempty( blank ),
     blank = struct( 'name', '', 'organization', '', 'email', '', ...
         'license_type', '', 'username', {{}}, 'hostid', {{}}, ...
         'expiration', '0000-00-00', 'signature', int8([]), 'prefix', '', ...
         'status', 'NOTFOUND', 'days_left', -Inf, 'filename', '' );
-    if strncmp( computer, 'PC', 2 ), 
-        fs = '\'; 
-    else
-        fs = '/'; 
-    end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -58,8 +43,9 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear_all = false;
-lnames = { '' };
-verbose = true;
+do_install = false;
+lnames = { cvx___.license };
+verbose = nargin == 0;
 if DEBUG && ~isempty(varargin),
     fprintf( '* Processing arguments:\n' );
 end
@@ -79,12 +65,22 @@ for k = 1 : length(varargin),
                 if DEBUG,
                     fprintf( 'public key requested.\n' );
                 end
-                license = get_public_key;
-                if nargout > 1,
-                    ltext = get_username;
-                    [ hid, hnm ] = get_hostid;
-                end
+                pkey = get_public_key;
+                username = get_username;
+                hostids = get_hostid;
                 return
+            case '-verbose',
+                if DEBUG,
+                    fprintf( 'verbose mode requested.\n' );
+                end
+                verbose = true;
+            case '-install',
+                if DEBUG,
+                    fprintf( 'install mode requested.\n' );
+                end
+                do_install = true;
+                clear_all = false;
+                verbose = true;
             case '-quiet',
                 if DEBUG,
                     fprintf( 'quiet mode requested.\n' );
@@ -95,6 +91,7 @@ for k = 1 : length(varargin),
                     fprintf( 'license clear requested.\n' );
                 end
                 clear_all = true;
+                do_install = false;
             case '-debug',
                 if DEBUG,
                     fprintf( 'debug mode requested.\n' );
@@ -121,11 +118,10 @@ for k = 1 : length(varargin),
         end
     end
 end
-do_install = nargout > 0 && ~clear_all;
 if DEBUG,
     if do_install,
         fprintf( '* Mode: install if valid license found.\n' );
-    elseif nargout > 0,
+    elseif clear_all,
         fprintf( '* Mode: clear the installed license.\n' );
     else
         fprintf( '* Mode: find and verify licenses only.\n' );
@@ -216,8 +212,9 @@ best_days = -1;
 best_ndx = 0;
 licenses = blank;
 for k = 1 : length(lnames),
+    installed = isstruct(lnames{k});
     if DEBUG,
-        if isempty(lnames{k}),
+        if installed,
             fprintf( '*     %d. Installed license:', k );
         else
             fprintf( '*     %d. %s:', k, lnames{k} );
@@ -255,7 +252,7 @@ for k = 1 : length(lnames),
     if DEBUG,
         fprintf( '\n' );
     end
-    if ~found || isempty(lnames{k}),
+    if ~found || installed,
         nfound = nfound + 1;
         lic.filename = { lic.filename };
         try
@@ -278,9 +275,6 @@ end
 
 if verbose,
     ltext = {};
-    if nargout == 0,
-        ltext{end+1} = '';
-    end
     ltext{end+1} = 'License host:';
     ltext{end+1} = sprintf( '    Username: %s', get_username );
     [ hostid_addr, hostid_name ] = get_hostid;
@@ -351,24 +345,32 @@ if best_days < 0,
     if verbose,
         ltext{end+1} = 'No valid licenses found.';
     end
-    license = [];
+    cvx___.license = [];
 elseif clear_all,
     if verbose,
         ltext{end+1} = 'License clear requested.';
     end
-    license = [];
+    cvx___.license = [];
 else
     license = licenses( best_ndx );
     license.filename = license.filename{1};
-end
-if nargout == 0,
-    clear license
-    if verbose,
-        ltext{end+1} = '';
-    end
+    cvx___.license = license;
 end
 if verbose,
     fprintf( '%s\n', ltext{:} );
+end
+
+%%%%%%%%%%%
+% Cleanup %
+%%%%%%%%%%%
+
+catch exc
+    
+    if ~strncmp( exc.identifier, 'CVX:', 4 ),
+        cvx___.license = [];
+    end
+    rethrow( exc );
+    
 end
 
 function ltext = print_license( lic, prefix, ltext, prefix2 )
@@ -449,20 +451,8 @@ if isempty( base64 ),
     base64(uint8('-_'))= 62:63;
 end
 try
-    lic = [];
-    if isempty( fname ),
-        if strncmp( computer, 'PC', 2 ), fsre = '\\'; else fsre = '/'; end
-        pfile = [ regexprep( prefdir, [ fsre, 'R\d\d\d\d\w$' ], '' ), fs, 'cvx_prefs.mat' ];
-        if ~exist( pfile, 'file' ),
-            pfile2 = [ prefdir, fs, 'cvx_prefs.mat' ];
-            if exist( pfile2, 'file' ),
-                pfile = pfile2;
-            end
-        end
-    end
-    if isempty( fname ) && exist( pfile, 'file' ),
-        lic = load( pfile, 'license' );
-        lic = lic.license;
+    if isstruct( fname ),
+        lic = fname;
         fname = '(from saved preferences)';
     elseif exist( fname, 'file' ),
         fid = fopen( fname, 'r' );
@@ -504,6 +494,8 @@ try
         y = int16(y(ndxs(1)+1:ndxs(end)-1));
         y(y>127) = y(y>127) - 256;
         lic.signature = int8(y);
+    else
+        lic = [];
     end
     if isempty( lic ), 
         lic = blank;

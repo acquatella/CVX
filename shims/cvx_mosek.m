@@ -15,13 +15,21 @@ shim.check   = [];
 shim.solve   = [];
 try_internal = false;
 is_special   = false;
-[ fs, ps, int_path, mext, nver, isoctave ] = cvx_version;
-if isoctave,
+fs = cvx___.fs;
+ps = cvx___.ps;
+mext = cvx___.mext;
+nver = cvx___.nver;
+int_path = cvx___.where;
+if cvx___.isoctave,
     shim.error = 'CVX Professional is not supported on Octave.';
-elseif ~usejava('jvm'),
-    shim.error = 'Java support is required.';
 elseif isempty( cvx___.license ),
     shim.error = 'A CVX Professional license is required.';
+elseif cvx___.jver < 1.06,
+    if cvx___.jver == 0,
+        shim.error = 'CVX Professional requires Java VM 1.6 or later.';
+    else
+        shim.error = 'CVX Professional requires the Java VM, which is disabled.';
+    end
 elseif nver < 7.14,
     if strncmp( mext, 'mexmaci', 7 ),
         shim.error = 'MOSEK requires 64-bit MATLAB 7.14 (R2012a) or later on Mac OSX.';
@@ -32,17 +40,15 @@ elseif nver < 7.14,
     end
 end
 if isempty( shim.error ),    
-    shim.error = 'An error occurred verifying the CVX Professional license.';
     try
-        [ lic, hostids ] = full_verify( cvx___.license );
-        cvx___.license = lic;
-        if ~isempty( lic.signature ),
+        [ cvx___.license, hostids ] = full_verify( cvx___.license );
+        if ~isempty( cvx___.license.signature ),
             switch cvx___.license.license_type,
             case { 'academic', 'trial' },
                 try_internal = true;
             otherwise,
                 try_internal = any( strfind( cvx___.license.license_type, '+mosek' ) );
-                is_special = try_internal && strncmp( lic.license_type, 'special', 7 );
+                is_special = try_internal && strncmp( cvx___.license.license_type, 'special', 7 );
             end
             if try_internal,
                 hostid = cvx___.license.hostid;
@@ -52,14 +58,16 @@ if isempty( shim.error ),
                     try_internal = any( cellfun( @(x)any(strcmp(x,hostid)), hostids ) );
                 end
             end
-            shim.error = '';
-        elseif lic.days_left == -Inf,
+        elseif cvx___.license.days_left == -Inf,
             shim.error = 'An error occurred verifying the CVX Professional license.';
         else
             shim.error = 'This CVX Professional license has expired.';
         end
     catch exc
         shim.error = my_get_report( exc );
+    end
+    if ~isempty( shim.error ),
+        cvx___.license = [];
     end
 end
 if ~isempty( shim.error ),

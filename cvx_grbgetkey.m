@@ -37,13 +37,19 @@ function success = cvx_grbgetkey( kcode, overwrite )
 %    <a href="matlab: web(''http://www.gurobi.com/documentation/5.5/quick-start-guide/node8'',''-browser'');">http://www.gurobi.com/documentation/5.5/quick-start-guide/node8</a>
 %
 % Note that in order to use Gurobi with CVX, *both* a Gurobi license and a
-% CVX Professional license are required; see this page for details:
-%
-%
-%
+% CVX Professional license are required.
+
+if exist( 'OCTAVE_VERSION', 'builtin' ),
+    error( 'CVX:NoOctave', 'CVX_GRBGETKEY cannot be used with Octave.' );
+end
+
+fs = filesep;
+mpath = mfilename('fullpath');
+temp = strfind( mpath, fs );
+mpath = mpath( 1 : temp(end) - 1 );
+mext = mexext;
 
 success = true;
-downloaded = false;
 line = '---------------------------------------------------------------------------';
 jprintf({
     ''
@@ -107,7 +113,6 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 if success,
-    [ fs, ps, mpath, mext ] = cvx_version; %#ok
     if fs == '\', fsre = '\\'; else fsre = fs; end
     gname = [ mpath, fs, 'gurobi' ];
     if ~exist( gname, 'dir' ),
@@ -289,9 +294,8 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 if success
-    result = '';
 	fprintf( 'Contacting the Gurobi Optimization license server...' );
-	[status,result]=system( sprintf( '%s --path=%s %s', gname, tdir, kcode ) );
+	[status,result]=system( sprintf( '%s --path=%s %s', gname, tdir, kcode ) ); %#ok
 	fprintf( 'done.\n' );
     if any( strfind( result, 'Unable to determine hostname' ) ) || any( strfind( result, 'not recognized as belonging to an academic domain' ) ),
         jprintf({
