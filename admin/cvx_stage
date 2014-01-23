@@ -1,0 +1,192 @@
+#!/bin/sh
+
+# Version number and URL
+TMP=/var/tmp
+URL=https://cvxresearch.svn.beanstalkapp.com/cvx
+DST=$TMP/cvx-dist
+CVX=$DST/cvx
+CVXO=$DST/cvx
+EXC=$CVX/examples
+DOC=$CVX/doc
+DOC_SRC=$DST/sphinx
+
+# Get build info 
+eval $(svn info $URL/trunk | grep "^Last Changed" | awk '\
+   $3=="Rev:" { printf("BUILD=\"%s\"\n",$4); } \
+   $3=="Date:" { printf("BDATE=\"%s %s\"\n",$4,$5); } ')
+eval $(svn info $URL/doc | grep "^Last Changed" | awk '\
+   $3=="Rev:" { printf("DBUILD=\"%s\"\n",$4); } \
+   $3=="Date:" { printf("DDATE=\"%s %s\"\n",$4,$5); } ')
+VERSION=`svn cat $URL/trunk/cvx_version.m | grep "^\s*cvx_ver" | sed "s@^.*'\(.*\)'.\\$@\1@"`
+MONTH=`date +%B`
+MONBIB=`date +%b | tr [:upper:] [:lower:]`
+YEAR=`date +%Y`
+echo "Version $VERSION, $MONTH $YEAR, Build $BUILD"
+echo "Code commit $BUILD, $BDATE"
+echo "Documentation commit $DBUILD, $DDATE"
+
+# Get the latest distribution and extract version number
+/bin/echo -n Constructing the staging directory...
+rm -rf $DST
+mkdir -p $DST
+svn export $URL/trunk $CVX >/dev/null
+svn export $URL/examples $EXC >/dev/null
+svn export $URL/doc $DOC_SRC >/dev/null
+cd $CVX
+rm -rf cvx_license.m shims/cvx_gurobi.m shims/cvx_mosek.m *_.m */*_.m */*/*_.m
+sed "s@cvx_bld *= *'[^']*'@cvx_bld = '$BUILD'@;s@cvx_bdate *= *'[^']*'@cvx_bdate = '$BDATE'@;s@cvx_dbld *= *'[^']*'@cvx_dbld = '$DBUILD'@;s@cvx_ddate *= *'[^']*'@cvx_ddate = '$DDATE'@" cvx_version.m > cvx_version.new
+mv -f cvx_version.new cvx_version.m
+chmod -fR a+r,gu+w .
+find . -type d -exec chmod g+s {} \;
+echo done.
+
+/bin/echo -n Compiling the documentation...
+cd $DOC_SRC
+make latexpdf html >/dev/null 2>&1
+cp -r _build/html $DOC
+cp -r _build/latex/CVX.pdf $DOC
+echo done.
+
+echo Creating the archives....
+cd $DST
+echo "Version $VERSION, $MONTH $YEAR, Build $BUILD" > version.txt
+LC_COLLATE=C
+LANG=C
+declare -a XDIR
+declare -a TCOM
+declare -a GCOM
+for os in glx a64 maci maci64 w32 w64; do
+	/bin/echo -n "    MATLAB $os ..."
+	TCOM="--exclude='*/o_*/*' --exclude='*/o_*'"
+	ZCOM="-x '*/o_*/*'"
+	GCOM="^\.\\|^doc/\\|^examples/\\|/o_"
+	TDIR="$os"
+	if [[ ! -d "$CVX/mosek/$os" ]]; then
+		# Exclude MOSEK
+		TCOM+=" --exclude='*/mosek/*' --exclude='*/mosek' --exclude='*/shims/cvx_mosek.*'"
+		ZCOM+=" '*/mosek/*' '*/shims/cvx_mosek.*'"
+		GCOM+="\\|mosek"
+	fi
+	if [[ ! -d "$CVX/gurobi/$os" ]]; then
+		# Exclude Gurobi
+		TCOM+="--exclude='*/gurobi/*' --exclude='*/gurobi' --exclude='*/cvx_grbgetkey.m' --exclude='*/shims/cvx_gurobi.*'"
+		ZCOM+=" '*/gurobi/*' '*/cvx_grbgetkey.m' '*/shims/cvx_gurobi.*'"
+		GCOM+="\\|gurobi\\|cvx_grbgetkey"
+		if [[ ! -d "$CVX/mosek/$os" ]]; then
+			# If neither MOSEK or Gurobi are present, remove the licensing system as well
+			TCOM+=" --exclude='*.p'"
+			ZCOM+=" '*.p'"
+			GCOM+="\\|\\.p\$"
+		fi
+	fi
+	for dd in glx a64 maci maci64 w32 w64; do
+		if [ $dd != $os ]; then
+			# Exclude MATLAB
+			TCOM+=" --exclude='*/$dd/*' --exclude='*/$dd' --exclude='*.mex$dd'"
+			ZCOM+=" '*/$dd/*' '*.mex$dd'"
+			GCOM+="\\|/$dd/\\|\\.mex$dd\$"
+		fi
+	done
+	rm -rf $TDIR
+	mkdir $TDIR
+	cd $CVX
+	find . -type d | sed 's@^\./\(.*\)@\1/@' | grep -v $GCOM | sort -f > MANIFEST
+	find . \! -type d | sed 's@^\./@@' | grep -v $GCOM | sort -f >> MANIFEST
+	cd $DST
+	eval "tar cfz cvx-$TDIR.tar.gz $TCOM cvx"
+	eval "zip -rq9 cvx-$TDIR.zip cvx $ZCOM"
+	/bin/echo -n ' redistributable ...'
+	# Exclude p-files
+	TCOM+=" --exclude='*.p'"
+	ZCOM+=" '*.p'"
+	GCOM+="\\|\\.p\$"
+	TDIR="$os-rd"
+	cd $CVX
+	find . -type d | sed 's@^\./\(.*\)@\1/@' | grep -v $GCOM | sort -f > MANIFEST
+	find . \! -type d | sed 's@^\./@@' | grep -v $GCOM | sort -f >> MANIFEST
+	cd $DST
+	eval "tar cfz cvx-$TDIR.tar.gz $TCOM cvx"
+	eval "zip -rq9 cvx-$TDIR.zip cvx $ZCOM"
+	echo ' done.'
+done
+
+for os in lin64 mac64; do
+	/bin/echo -n "    Octave $os ..."
+	TCOM="--exclude='*.p'"
+	ZCOM="-x '*.p'"
+	GCOM="^\.\\|^doc/\\|^examples/\\|\\.p\$"
+	TDIR="o-$os"
+	# Exclude MOSEK
+	TCOM+=" --exclude='*/mosek/*' --exclude='*/mosek' --exclude='*/shims/cvx_mosek.*'"
+	ZCOM+=" '*/mosek/*' '*/shims/cvx_mosek.*'"
+	GCOM+="\\|mosek"
+	# Exclude Gurobi
+	TCOM+="--exclude='*/gurobi/*' --exclude='*/gurobi' --exclude='*/cvx_grbgetkey.m' --exclude='*/shims/cvx_gurobi.p'"
+	ZCOM+=" '*/gurobi/*' '*/cvx_grbgetkey.m' '*/shims/cvx_gurobi.p'"
+	GCOM+="\\|gurobi\\|cvx_grbgetkey"
+	for dd in glx a64 maci maci64 w32 w64; do
+		# Exclude MATLAB
+		TCOM+=" --exclude='*/$dd/*' --exclude='*/$dd' --exclude='*.mex$dd'"
+		ZCOM+=" '*/$dd/*' '*.mex$dd'"
+		GCOM+="\\|/$dd/\\|\\.mex$dd\$"
+	done
+	for dd in lin64 mac64; do
+		if [ $dd != $os ]; then
+			# Exclude Octave
+			TCOM+=" --exclude='*/o_$dd/*' --exclude='*/o_$dd'"
+			ZCOM+=" '*/o_$dd/*'"
+			GCOM+="\\|/o_$dd/"
+		fi
+	done
+	cd $CVX
+	find . -type d | sed 's@^\./\(.*\)@\1/@' | grep -v $GCOM | sort -f > MANIFEST
+	find . \! -type d | sed 's@^\./@@' | grep -v $GCOM | sort -f >> MANIFEST
+	cd $DST
+	eval "tar cfz cvx-$TDIR.tar.gz $TCOM cvx"
+	eval "zip -rq9 cvx-$TDIR.zip cvx $ZCOM"
+	echo ' done.'
+done
+
+/bin/echo -n '    BYOS...';
+TCOM=""
+ZCOM="-x"
+GCOM="^\.\\|^doc/\\|^examples/"
+# Exclude MOSEK
+TCOM+=" --exclude='*/mosek/*' --exclude='*/mosek' --exclude='*/shims/cvx_mosek.*'"
+ZCOM+=" '*/mosek/*' '*/shims/cvx_mosek.*'"
+GCOM+="\\|mosek"
+# Exclude Gurobi
+TCOM+="--exclude='*/gurobi/*' --exclude='*/gurobi' --exclude='*/cvx_grbgetkey.m' --exclude='*/shims/cvx_gurobi.p'"
+ZCOM+=" '*/gurobi/*' '*/cvx_grbgetkey.m' '*/shims/cvx_gurobi.p'"
+GCOM+="\\|gurobi\\|cvx_grbgetkey"
+cd $CVX
+find . -type d | sed 's@^\./\(.*\)@\1/@' | grep -v $GCOM | sort -f > MANIFEST
+find . \! -type d | sed 's@^\./@@' | grep -v $GCOM | sort -f >> MANIFEST
+cd $DST
+rm -f cvx.tar.gz cvx.zip
+eval "tar cfz cvx.tar.gz $TCOM cvx"
+eval "zip -rq9 cvx.zip cvx $ZCOM"
+echo 'done.'
+
+/bin/echo -n '    All-platform redistributable...'
+TCOM="--exclude='*.p'"
+ZCOM="-x '*.p'"
+GCOM="^\.\\|^doc/\\|^examples/\\|\\.p\$"
+# Exclude MOSEK
+TCOM+=" --exclude='*/mosek/*' --exclude='*/mosek' --exclude='*/shims/cvx_mosek.*'"
+ZCOM+=" '*/mosek/*' '*/shims/cvx_mosek.*'"
+GCOM+="\\|mosek"
+# Exclude Gurobi
+TCOM+="--exclude='*/gurobi/*' --exclude='*/gurobi' --exclude='*/cvx_grbgetkey.m' --exclude='*/shims/cvx_gurobi.p'"
+ZCOM+=" '*/gurobi/*' '*/cvx_grbgetkey.m' '*/shims/cvx_gurobi.p'"
+GCOM+="\\|gurobi\\|cvx_grbgetkey"
+cd $CVX
+find . -type d | sed 's@^\./\(.*\)@\1/@' | grep -v $GCOM | sort -f > MANIFEST
+find . \! -type d | sed 's@^\./@@' | grep -v $GCOM | sort -f >> MANIFEST
+cd $DST
+rm -f cvx-rd.tar.gz cvx-rd.zip
+eval "tar cfz cvx-rd.tar.gz $TCOM cvx"
+eval "zip -rq9 cvx-rd.zip cvx $ZCOM"
+echo 'done.'
+echo 'done.'
+
