@@ -75,7 +75,7 @@ are *public domain*. We do ask that if you use any of this content in
 your own work, that you acknowledge the source and any specific authors
 cited therein.
 
-Thank you for your interest in CVX!
+Thank you for your interest in CVX!    
 Michael Grant and Stephen Boyd    
 [CVX Research, Inc.](http://cvxr.com)    
 (c) 2014. All rights reserved.
